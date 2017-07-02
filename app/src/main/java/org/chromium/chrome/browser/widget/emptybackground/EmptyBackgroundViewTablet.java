@@ -38,8 +38,6 @@ public class EmptyBackgroundViewTablet extends FrameLayout {
     private Animator mAnimateInAnimation;
     private Animator mAnimateOutAnimation;
 
-    private IncognitoToggleButtonTablet mIncognitoToggleButton;
-
     /**
      * Creates an instance of {@link EmptyBackgroundViewTablet}.
      * @param context The {@link Context} to create this {@link View} under.
@@ -59,7 +57,6 @@ public class EmptyBackgroundViewTablet extends FrameLayout {
             @Override
             public void onClick(View v) {
                 if (mTabCreator == null) return;
-                mTabModelSelector.getModel(false).commitAllTabClosures();
                 mTabCreator.launchNTP();
             }
         });
@@ -75,10 +72,10 @@ public class EmptyBackgroundViewTablet extends FrameLayout {
     public void setTabModelSelector(TabModelSelector tabModelSelector) {
         mTabModelSelector = tabModelSelector;
 
-        mIncognitoToggleButton = (IncognitoToggleButtonTablet) findViewById(
+        IncognitoToggleButtonTablet incognitoToggle = (IncognitoToggleButtonTablet) findViewById(
                 R.id.empty_incognito_toggle_button);
 
-        mIncognitoToggleButton.setTabModelSelector(mTabModelSelector);
+        incognitoToggle.setTabModelSelector(mTabModelSelector);
     }
 
     /**
@@ -157,17 +154,12 @@ public class EmptyBackgroundViewTablet extends FrameLayout {
             public void onAnimationStart(Animator animation) {
                 setVisibility(View.VISIBLE);
                 getRootView().findViewById(R.id.control_container).setVisibility(VISIBLE);
-                // Disable the incognito toggle button while the tab switcher animation is running
-                // to avoid getting into a weird UI state if the button is clicked multiple times.
-                // See crbug.com/586875.
-                mIncognitoToggleButton.setEnabled(false);
             }
 
             @Override
             public void onAnimationEnd(Animator animation) {
                 setVisibility(View.GONE);
                 mCurrentTransitionAnimation = null;
-                mIncognitoToggleButton.setEnabled(true);
             }
         });
     }

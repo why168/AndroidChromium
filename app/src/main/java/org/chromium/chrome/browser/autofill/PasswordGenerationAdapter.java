@@ -7,7 +7,9 @@ package org.chromium.chrome.browser.autofill;
 import android.content.Context;
 import android.text.SpannableString;
 import android.text.Spanned;
+import android.text.TextPaint;
 import android.text.method.LinkMovementMethod;
+import android.text.style.ClickableSpan;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.View.MeasureSpec;
@@ -16,8 +18,8 @@ import android.widget.BaseAdapter;
 import android.widget.RelativeLayout.LayoutParams;
 import android.widget.TextView;
 
+import org.chromium.base.ApiCompatibilityUtils;
 import org.chromium.chrome.R;
-import org.chromium.ui.text.NoUnderlineClickableSpan;
 
 import java.util.Arrays;
 import java.util.List;
@@ -142,13 +144,20 @@ public class PasswordGenerationAdapter extends BaseAdapter {
                         .findViewById(R.id.password_generation_explanation);
                 SpannableString explanationSpan = new SpannableString(mExplanationText);
                 explanationSpan.setSpan(
-                        new NoUnderlineClickableSpan() {
+                        new ClickableSpan() {
                             @Override
                             public void onClick(View view) {
                                 mDelegate.onSavedPasswordsLinkClicked();
                             }
-                        },
-                        mExplanationTextLinkRangeStart, mExplanationTextLinkRangeEnd,
+
+                            @Override
+                            public void updateDrawState(TextPaint textPaint) {
+                                textPaint.setUnderlineText(false);
+                                textPaint.setColor(ApiCompatibilityUtils.getColor(
+                                        mContext.getResources(),
+                                        R.color.password_generation_link_text_color));
+                            }
+                        }, mExplanationTextLinkRangeStart, mExplanationTextLinkRangeEnd,
                         Spanned.SPAN_INCLUSIVE_INCLUSIVE);
                 explanation.setText(explanationSpan);
                 explanation.setMovementMethod(LinkMovementMethod.getInstance());

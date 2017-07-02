@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,8 +13,6 @@ import android.os.Looper;
 
 import org.chromium.base.ApiCompatibilityUtils;
 import org.chromium.base.ApplicationStatus;
-import org.chromium.base.ContextUtils;
-import org.chromium.base.ThreadUtils;
 import org.chromium.base.VisibleForTesting;
 import org.chromium.chrome.browser.invalidation.DelayedInvalidationsController;
 import org.chromium.chrome.browser.omaha.OmahaClient;
@@ -24,12 +22,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * Monitors the event that indicates the screen is turning on.  Used to run actions that shouldn't
  * occur while the phone's screen is off (i.e. when the user expects the phone to be "asleep").
- *
- * When conditions are right, code in {@link PowerBroadcastReceiver.ServiceRunnable#runActions()}
- * is executed.
  */
 public class PowerBroadcastReceiver extends BroadcastReceiver {
+    private final AtomicBoolean mNeedToRunActions = new AtomicBoolean(true);
     private final AtomicBoolean mIsRegistered = new AtomicBoolean(false);
+    private final Handler mHandler = new Handler(Looper.getMainLooper());
 
     private PowerManagerHelper mPowerManagerHelper;
     private ServiceRunnable mServiceRunnable;
@@ -46,64 +43,38 @@ public class PowerBroadcastReceiver extends BroadcastReceiver {
     }
 
     /**
-     * Defines a set of actions to perform when the conditions are met.
+     * Defines a set of actions to perform when the conditions are correct.
      */
     @VisibleForTesting
     public static class ServiceRunnable implements Runnable {
-        static final int STATE_UNINITIALIZED = 0;
-        static final int STATE_POSTED = 1;
-        static final int STATE_CANCELED = 2;
-        static final int STATE_COMPLETED = 3;
-
         /**
          * ANRs are triggered if the app fails to respond to a touch event within 5 seconds. Posting
          * this runnable after 5 seconds lets ChromeTabbedActivity.onResume() perform whatever more
-         * important tasks are necessary: http://b/5864891
+         * important tasks are necessary.
          */
-        private static final long MS_DELAY_TO_RUN = 5000;
-        private final Handler mHandler = new Handler(Looper.getMainLooper());
+        private static final long DELAY_TO_POST_MS = 5000;
 
-        private int mState = STATE_UNINITIALIZED;
-
-        public int getState() {
-            return mState;
-        }
-
-        public void post() {
-            if (mState == STATE_POSTED) return;
-            setState(STATE_POSTED);
-            mHandler.postDelayed(this, getDelayToRun());
-        }
-
-        public void cancel() {
-            if (mState != STATE_POSTED) return;
-            setState(STATE_CANCELED);
-            mHandler.removeCallbacks(this);
-        }
-
-        /** Unless testing, do not override this function. */
-        @Override
-        public void run() {
-            if (mState != STATE_POSTED) return;
-            setState(STATE_COMPLETED);
-            runActions();
-        }
-
-        public void setState(int state) {
-            mState = state;
+        /**
+         * @returns how long the runnable should be delayed before it is run.
+         */
+        public long delayToRun() {
+            return DELAY_TO_POST_MS;
         }
 
         /**
-         * Executed when all of the system conditions are met.
+         * Unless testing, do not override this function.
          */
-        public void runActions() {
-            Context context = ContextUtils.getApplicationContext();
-            OmahaClient.onForegroundSessionStart(context);
-            DelayedInvalidationsController.getInstance().notifyPendingInvalidations(context);
-        }
+        @Override
+        public void run() {
+            Context context = ApplicationStatus.getApplicationContext();
 
-        public long getDelayToRun() {
-            return MS_DELAY_TO_RUN;
+            // Resume communication with the Omaha Update Server.
+            if (ChromeVersionInfo.isOfficialBuild()) {
+                Intent omahaIntent = OmahaClient.createInitializeIntent(context);
+                context.startService(omahaIntent);
+            }
+
+            DelayedInvalidationsController.getInstance().notifyPendingInvalidations(context);
         }
     }
 
@@ -112,32 +83,11 @@ public class PowerBroadcastReceiver extends BroadcastReceiver {
         mPowerManagerHelper = new PowerManagerHelper();
     }
 
-    /** See {@link ChromeApplication#onForegroundSessionStart()}. */
-    public void onForegroundSessionStart() {
-        ThreadUtils.assertOnUiThread();
-        assert Looper.getMainLooper() == Looper.myLooper();
-
-        if (mPowerManagerHelper.isScreenOn(ContextUtils.getApplicationContext())) {
-            mServiceRunnable.post();
-        } else {
-            registerReceiver();
-        }
-    }
-
-    /** See {@link ChromeApplication#onForegroundSessionEnd()}. */
-    public void onForegroundSessionEnd() {
-        assert Looper.getMainLooper() == Looper.myLooper();
-
-        mServiceRunnable.cancel();
-        unregisterReceiver();
-    }
-
     @Override
     public void onReceive(Context context, Intent intent) {
-        if (Intent.ACTION_SCREEN_ON.equals(intent.getAction())
+        if (intent.getAction().equals(Intent.ACTION_SCREEN_ON)
                 && ApplicationStatus.hasVisibleActivities()) {
-            mServiceRunnable.post();
-            unregisterReceiver();
+            runActions(context, false);
         }
     }
 
@@ -152,21 +102,43 @@ public class PowerBroadcastReceiver extends BroadcastReceiver {
     /**
      * Unregisters this broadcast receiver so it no longer receives Intents.
      * Also cancels any Runnables waiting to be executed.
+     * @param context Context to unregister the receiver from.
      */
-    private void unregisterReceiver() {
+    public void unregisterReceiver(Context context) {
+        mHandler.removeCallbacks(mServiceRunnable);
         if (mIsRegistered.getAndSet(false)) {
-            ContextUtils.getApplicationContext().unregisterReceiver(this);
+            context.unregisterReceiver(this);
+            mNeedToRunActions.set(false);
         }
     }
 
     /**
      * Registers this broadcast receiver so it receives Intents.
+     * This should only be done by the owning Activity.
+     * @param context Context to register the receiver with.
      */
-    private void registerReceiver() {
+    public void registerReceiver(Context context) {
         assert Looper.getMainLooper() == Looper.myLooper();
-        if (mIsRegistered.getAndSet(true)) return;
-        ContextUtils.getApplicationContext().registerReceiver(
-                this, new IntentFilter(Intent.ACTION_SCREEN_ON));
+        if (!mIsRegistered.getAndSet(true)) {
+            context.registerReceiver(this, new IntentFilter(Intent.ACTION_SCREEN_ON));
+            mNeedToRunActions.set(true);
+        }
+    }
+
+    /**
+     * Posts a task to run the necessary actions.  The task is delayed to prevent spin-locking in
+     * ChromeTabbedActivity.onResume(): http://b/issue?id=5864891&query=5864891
+     * @param onlyIfScreenIsOn Whether or not the screen must be on for the actions to be run.
+     */
+    public void runActions(Context context, boolean onlyIfScreenIsOn) {
+        assert mServiceRunnable != null;
+        assert mPowerManagerHelper != null;
+        if (!onlyIfScreenIsOn || mPowerManagerHelper.isScreenOn(context)) {
+            if (mNeedToRunActions.getAndSet(false)) {
+                unregisterReceiver(context);
+                mHandler.postDelayed(mServiceRunnable, mServiceRunnable.delayToRun());
+            }
+        }
     }
 
     /**
@@ -175,7 +147,7 @@ public class PowerBroadcastReceiver extends BroadcastReceiver {
     @VisibleForTesting
     void setServiceRunnableForTests(ServiceRunnable runnable) {
         assert mServiceRunnable != null;
-        mServiceRunnable.cancel();
+        mHandler.removeCallbacks(mServiceRunnable);
         mServiceRunnable = runnable;
     }
 

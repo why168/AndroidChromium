@@ -31,6 +31,11 @@ public class TabContextMenuPopulator implements ContextMenuPopulator {
     }
 
     @Override
+    public boolean shouldShowContextMenu(ContextMenuParams params) {
+        return mPopulator.shouldShowContextMenu(params);
+    }
+
+    @Override
     public void buildContextMenu(ContextMenu menu, Context context, ContextMenuParams params) {
         mPopulator.buildContextMenu(menu, context, params);
         RewindableIterator<TabObserver> observers = mTab.getTabObservers();

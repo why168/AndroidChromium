@@ -4,28 +4,30 @@
 
 package org.chromium.chrome.browser.customtabs;
 
-import android.app.Activity;
-import android.content.Context;
+import android.app.Application;
 import android.content.Intent;
 import android.content.pm.ResolveInfo;
-import android.text.TextUtils;
+import android.graphics.Rect;
+import android.os.IBinder;
+import android.os.SystemClock;
+import android.os.TransactionTooLargeException;
 
+import org.chromium.base.Log;
 import org.chromium.base.VisibleForTesting;
+import org.chromium.chrome.browser.ChromeActivity;
+import org.chromium.chrome.browser.UrlUtilities;
+import org.chromium.chrome.browser.banners.AppBannerManager;
 import org.chromium.chrome.browser.contextmenu.ChromeContextMenuPopulator;
 import org.chromium.chrome.browser.contextmenu.ContextMenuPopulator;
 import org.chromium.chrome.browser.externalnav.ExternalNavigationDelegateImpl;
 import org.chromium.chrome.browser.externalnav.ExternalNavigationHandler;
-import org.chromium.chrome.browser.fullscreen.BrowserStateBrowserControlsVisibilityDelegate;
-import org.chromium.chrome.browser.fullscreen.ComposedBrowserControlsVisibilityDelegate;
-import org.chromium.chrome.browser.tab.BrowserControlsVisibilityDelegate;
 import org.chromium.chrome.browser.tab.InterceptNavigationDelegateImpl;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.tab.TabContextMenuItemDelegate;
 import org.chromium.chrome.browser.tab.TabDelegateFactory;
-import org.chromium.chrome.browser.tab.TabStateBrowserControlsVisibilityDelegate;
 import org.chromium.chrome.browser.tab.TabWebContentsDelegateAndroid;
-import org.chromium.chrome.browser.util.IntentUtils;
-import org.chromium.chrome.browser.util.UrlUtilities;
+import org.chromium.content_public.browser.LoadUrlParams;
+import org.chromium.content_public.browser.WebContents;
 
 /**
  * A {@link TabDelegateFactory} class to be used in all {@link Tab} owned
@@ -37,54 +39,35 @@ public class CustomTabDelegateFactory extends TabDelegateFactory {
      */
     static class CustomTabNavigationDelegate extends ExternalNavigationDelegateImpl {
         private static final String TAG = "customtabs";
-        private final String mClientPackageName;
         private boolean mHasActivityStarted;
 
         /**
          * Constructs a new instance of {@link CustomTabNavigationDelegate}.
          */
-        public CustomTabNavigationDelegate(Tab tab, String clientPackageName) {
-            super(tab);
-            mClientPackageName = clientPackageName;
+        public CustomTabNavigationDelegate(ChromeActivity activity) {
+            super(activity);
         }
 
         @Override
-        public void startActivity(Intent intent, boolean proxy) {
-            super.startActivity(intent, proxy);
+        public void startActivity(Intent intent) {
+            super.startActivity(intent);
             mHasActivityStarted = true;
         }
 
         @Override
-        public boolean startActivityIfNeeded(Intent intent, boolean proxy) {
-            boolean isExternalProtocol = !UrlUtilities.isAcceptedScheme(intent.toUri(0));
+        public boolean startActivityIfNeeded(Intent intent) {
+            boolean isExternalProtocol = !UrlUtilities.isAcceptedScheme(intent.getDataString());
             boolean hasDefaultHandler = hasDefaultHandler(intent);
             try {
-                // For a URL chrome can handle and there is no default set, handle it ourselves.
-                if (!hasDefaultHandler) {
-                    if (!TextUtils.isEmpty(mClientPackageName) && isPackageSpecializedHandler(
-                            mApplicationContext, mClientPackageName, intent)) {
-                        intent.setPackage(mClientPackageName);
-                    } else if (!isExternalProtocol) {
-                        return false;
-                    }
-                }
+                // For a url chrome can handle and there is no default set, handle it ourselves.
+                if (!hasDefaultHandler && !isExternalProtocol) return false;
+                // If android fails to find a handler, handle it ourselves.
+                if (!getActivity().startActivityIfNeeded(intent, -1)) return false;
 
-                if (proxy) {
-                    dispatchAuthenticatedIntent(intent);
-                    mHasActivityStarted = true;
-                    return true;
-                } else {
-                    // If android fails to find a handler, handle it ourselves.
-                    Context context = getAvailableContext();
-                    if (context instanceof Activity
-                            && ((Activity) context).startActivityIfNeeded(intent, -1)) {
-                        mHasActivityStarted = true;
-                        return true;
-                    }
-                }
-                return false;
+                mHasActivityStarted = true;
+                return true;
             } catch (RuntimeException e) {
-                IntentUtils.logTransactionTooLargeOrRethrow(e, intent);
+                logTransactionTooLargeOrRethrow(e, intent);
                 return false;
             }
         }
@@ -96,17 +79,16 @@ public class CustomTabDelegateFactory extends TabDelegateFactory {
          */
         private boolean hasDefaultHandler(Intent intent) {
             try {
-                ResolveInfo info =
-                        mApplicationContext.getPackageManager().resolveActivity(intent, 0);
+                ResolveInfo info = getActivity().getPackageManager().resolveActivity(intent, 0);
                 if (info != null) {
-                    final String chromePackage = mApplicationContext.getPackageName();
+                    final String chromePackage = getActivity().getPackageName();
                     // If a default handler is found and it is not chrome itself, fire the intent.
                     if (info.match != 0 && !chromePackage.equals(info.activityInfo.packageName)) {
                         return true;
                     }
                 }
             } catch (RuntimeException e) {
-                IntentUtils.logTransactionTooLargeOrRethrow(e, intent);
+                logTransactionTooLargeOrRethrow(e, intent);
             }
             return false;
         }
@@ -118,14 +100,25 @@ public class CustomTabDelegateFactory extends TabDelegateFactory {
         public boolean hasExternalActivityStarted() {
             return mHasActivityStarted;
         }
+
+        private static void logTransactionTooLargeOrRethrow(RuntimeException e, Intent intent) {
+            // See http://crbug.com/369574.
+            if (e.getCause() instanceof TransactionTooLargeException) {
+                Log.e(TAG, "Could not resolve Activity for intent " + intent.toString(), e);
+            } else {
+                throw e;
+            }
+        }
     }
 
     private static class CustomTabWebContentsDelegate extends TabWebContentsDelegateAndroid {
+        private String mTargetUrl;
+
         /**
          * See {@link TabWebContentsDelegateAndroid}.
          */
-        public CustomTabWebContentsDelegate(Tab tab) {
-            super(tab);
+        public CustomTabWebContentsDelegate(Tab tab, CustomTabActivity activity) {
+            super(tab, activity);
         }
 
         @Override
@@ -134,62 +127,61 @@ public class CustomTabDelegateFactory extends TabDelegateFactory {
         }
 
         @Override
+        public void webContentsCreated(WebContents sourceWebContents, long openerRenderFrameId,
+                String frameName, String targetUrl, WebContents newWebContents) {
+            super.webContentsCreated(
+                    sourceWebContents, openerRenderFrameId, frameName, targetUrl,
+                    newWebContents);
+            mTargetUrl = targetUrl;
+        }
+
+        @Override
+        public boolean addNewContents(WebContents sourceWebContents, WebContents webContents,
+                int disposition, Rect initialPosition, boolean userGesture) {
+            assert mTargetUrl != null;
+            ((CustomTabActivity) mActivity).loadUrlInCurrentTab(
+                    new LoadUrlParams(mTargetUrl), SystemClock.elapsedRealtime());
+            mTargetUrl = null;
+            return false;
+        }
+
+        @Override
         protected void bringActivityToForeground() {
             // No-op here. If client's task is in background Chrome is unable to foreground it.
         }
     }
 
-    private final boolean mShouldHideBrowserControls;
-    private final boolean mIsOpenedByChrome;
-    private final BrowserStateBrowserControlsVisibilityDelegate mBrowserStateVisibilityDelegate;
-
-    private ExternalNavigationDelegateImpl mNavigationDelegate;
+    private final Application mApplication;
+    private final IBinder mSession;
+    private CustomTabNavigationDelegate mNavigationDelegate;
     private ExternalNavigationHandler mNavigationHandler;
+    private CustomTabObserver mTabObserver;
 
-    /**
-     * @param shouldHideBrowserControls Whether or not the browser controls may auto-hide.
-     * @param isOpenedByChrome Whether the CustomTab was originally opened by Chrome.
-     * @param visibilityDelegate The delegate that handles browser control visibility associated
-     *                           with browser actions (as opposed to tab state).
-     */
-    public CustomTabDelegateFactory(boolean shouldHideBrowserControls, boolean isOpenedByChrome,
-            BrowserStateBrowserControlsVisibilityDelegate visibilityDelegate) {
-        mShouldHideBrowserControls = shouldHideBrowserControls;
-        mIsOpenedByChrome = isOpenedByChrome;
-        mBrowserStateVisibilityDelegate = visibilityDelegate;
+    public CustomTabDelegateFactory(Application application, IBinder session) {
+        super();
+        mApplication = application;
+        mSession = session;
     }
 
     @Override
-    public BrowserControlsVisibilityDelegate createBrowserControlsVisibilityDelegate(Tab tab) {
-        return new ComposedBrowserControlsVisibilityDelegate(
-                new TabStateBrowserControlsVisibilityDelegate(tab) {
-                    @Override
-                    public boolean isHidingBrowserControlsEnabled() {
-                        return mShouldHideBrowserControls && super.isHidingBrowserControlsEnabled();
-                    }
-                },
-                mBrowserStateVisibilityDelegate);
+    public TabWebContentsDelegateAndroid createWebContentsDelegate(Tab tab,
+            ChromeActivity activity) {
+        assert activity instanceof CustomTabActivity;
+        return new CustomTabWebContentsDelegate(tab, (CustomTabActivity) activity);
     }
 
     @Override
-    public TabWebContentsDelegateAndroid createWebContentsDelegate(Tab tab) {
-        return new CustomTabWebContentsDelegate(tab);
-    }
-
-    @Override
-    public InterceptNavigationDelegateImpl createInterceptNavigationDelegate(Tab tab) {
-        if (mIsOpenedByChrome) {
-            mNavigationDelegate = new ExternalNavigationDelegateImpl(tab);
-        } else {
-            mNavigationDelegate = new CustomTabNavigationDelegate(tab, tab.getAppAssociatedWith());
-        }
+    public InterceptNavigationDelegateImpl createInterceptNavigationDelegate(Tab tab,
+            ChromeActivity activity) {
+        mNavigationDelegate = new CustomTabNavigationDelegate(activity);
         mNavigationHandler = new ExternalNavigationHandler(mNavigationDelegate);
-        return new InterceptNavigationDelegateImpl(mNavigationHandler, tab);
+        return new InterceptNavigationDelegateImpl(mNavigationHandler, activity, tab);
     }
 
     @Override
-    public ContextMenuPopulator createContextMenuPopulator(Tab tab) {
-        return new ChromeContextMenuPopulator(new TabContextMenuItemDelegate(tab),
+    public ContextMenuPopulator createContextMenuPopulator(Tab tab, ChromeActivity activity) {
+        return new ChromeContextMenuPopulator(
+                new TabContextMenuItemDelegate(tab, activity),
                 ChromeContextMenuPopulator.CUSTOM_TAB_MODE);
     }
 
@@ -205,12 +197,12 @@ public class CustomTabDelegateFactory extends TabDelegateFactory {
      * @return The {@link CustomTabNavigationDelegate} in this tab. For test purpose only.
      */
     @VisibleForTesting
-    ExternalNavigationDelegateImpl getExternalNavigationDelegate() {
+    CustomTabNavigationDelegate getExternalNavigationDelegate() {
         return mNavigationDelegate;
     }
 
     @Override
-    public boolean canShowAppBanners(Tab tab) {
-        return false;
+    public AppBannerManager createAppBannerManager(Tab tab) {
+        return null;
     }
 }

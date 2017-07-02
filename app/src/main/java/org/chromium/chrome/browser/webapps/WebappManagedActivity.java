@@ -27,7 +27,7 @@ public abstract class WebappManagedActivity extends WebappActivity {
     }
 
     @Override
-    protected String getActivityId() {
+    protected String getId() {
         return String.valueOf(mActivityIndex);
     }
 
@@ -35,8 +35,7 @@ public abstract class WebappManagedActivity extends WebappActivity {
      * Marks that this WebappActivity is recently used to prevent other webapps from using it.
      */
     private void markActivityUsed() {
-        ActivityAssigner.instance(ActivityAssigner.WEBAPP_NAMESPACE)
-                .markActivityUsed(mActivityIndex, getWebappInfo().id());
+        ActivityAssigner.instance(this).markActivityUsed(mActivityIndex, getWebappInfo().id());
     }
 
     /**

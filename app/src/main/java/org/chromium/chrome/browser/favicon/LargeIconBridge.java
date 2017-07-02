@@ -6,6 +6,7 @@ package org.chromium.chrome.browser.favicon;
 
 import android.graphics.Bitmap;
 import android.util.LruCache;
+import android.util.Pair;
 
 import org.chromium.base.annotations.CalledByNative;
 import org.chromium.chrome.browser.profiles.Profile;
@@ -20,19 +21,7 @@ public class LargeIconBridge {
     private static final int CACHE_ENTRY_MIN_SIZE_BYTES = 1024;
     private long mNativeLargeIconBridge;
     private Profile mProfile;
-    private LruCache<String, CachedFavicon> mFaviconCache;
-
-    private static class CachedFavicon {
-        public Bitmap icon;
-        public int fallbackColor;
-        public boolean isFallbackColorDefault;
-
-        CachedFavicon(Bitmap newIcon, int newFallbackColor, boolean newIsFallbackColorDefault) {
-            icon = newIcon;
-            fallbackColor = newFallbackColor;
-            isFallbackColorDefault = newIsFallbackColorDefault;
-        }
-    }
+    private LruCache<String, Pair<Bitmap, Integer>> mFaviconCache;
 
     /**
      * Callback for use with GetLargeIconForUrl().
@@ -45,7 +34,7 @@ public class LargeIconBridge {
          * @param fallbackColor The fallback color to use if icon is null.
          */
         @CalledByNative("LargeIconCallback")
-        void onLargeIconAvailable(Bitmap icon, int fallbackColor, boolean isFallbackColorDefault);
+        void onLargeIconAvailable(Bitmap icon, int fallbackColor);
     }
 
     /**
@@ -66,10 +55,10 @@ public class LargeIconBridge {
     public void createCache(int cacheSizeBytes) {
         assert cacheSizeBytes > 0;
 
-        mFaviconCache = new LruCache<String, CachedFavicon>(cacheSizeBytes) {
+        mFaviconCache = new LruCache<String, Pair<Bitmap, Integer>>(cacheSizeBytes) {
             @Override
-            protected int sizeOf(String key, CachedFavicon favicon) {
-                int iconBitmapSize = favicon.icon == null ? 0 : favicon.icon.getByteCount();
+            protected int sizeOf(String key, Pair<Bitmap, Integer> icon) {
+                int iconBitmapSize = icon.first == null ? 0 : icon.first.getByteCount();
                 return Math.max(CACHE_ENTRY_MIN_SIZE_BYTES, iconBitmapSize);
             }
         };
@@ -106,20 +95,17 @@ public class LargeIconBridge {
             return nativeGetLargeIconForURL(mNativeLargeIconBridge, mProfile, pageUrl,
                     desiredSizePx, callback);
         } else {
-            CachedFavicon cached = mFaviconCache.get(pageUrl);
+            Pair<Bitmap, Integer> cached = mFaviconCache.get(pageUrl);
             if (cached != null) {
-                callback.onLargeIconAvailable(
-                        cached.icon, cached.fallbackColor, cached.isFallbackColorDefault);
+                callback.onLargeIconAvailable(cached.first, cached.second);
                 return true;
             }
 
             LargeIconCallback callbackWrapper = new LargeIconCallback() {
                 @Override
-                public void onLargeIconAvailable(
-                        Bitmap icon, int fallbackColor, boolean isFallbackColorDefault) {
-                    mFaviconCache.put(pageUrl,
-                            new CachedFavicon(icon, fallbackColor, isFallbackColorDefault));
-                    callback.onLargeIconAvailable(icon, fallbackColor, isFallbackColorDefault);
+                public void onLargeIconAvailable(Bitmap icon, int fallbackColor) {
+                    mFaviconCache.put(pageUrl, new Pair<Bitmap, Integer>(icon, fallbackColor));
+                    callback.onLargeIconAvailable(icon, fallbackColor);
                 }
             };
             return nativeGetLargeIconForURL(mNativeLargeIconBridge, mProfile, pageUrl,

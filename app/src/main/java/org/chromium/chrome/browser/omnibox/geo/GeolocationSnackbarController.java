@@ -8,16 +8,17 @@ import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Build;
+import android.os.Bundle;
+import android.preference.PreferenceManager;
 import android.text.SpannableString;
 import android.text.style.TypefaceSpan;
 import android.view.View;
 
-import org.chromium.base.ContextUtils;
 import org.chromium.chrome.R;
-import org.chromium.chrome.browser.ChromeFeatureList;
 import org.chromium.chrome.browser.device.DeviceClassManager;
+import org.chromium.chrome.browser.preferences.MainPreferences;
+import org.chromium.chrome.browser.preferences.Preferences;
 import org.chromium.chrome.browser.preferences.PreferencesLauncher;
-import org.chromium.chrome.browser.preferences.SearchEnginePreference;
 import org.chromium.chrome.browser.search_engines.TemplateUrlService;
 import org.chromium.chrome.browser.snackbar.Snackbar;
 import org.chromium.chrome.browser.snackbar.SnackbarManager;
@@ -62,7 +63,6 @@ public class GeolocationSnackbarController implements SnackbarController {
     public static void maybeShowSnackbar(final SnackbarManager snackbarManager, View view,
             boolean isIncognito, int delayMs) {
         final Context context = view.getContext();
-        if (ChromeFeatureList.isEnabled(ChromeFeatureList.CONSISTENT_OMNIBOX_GEOLOCATION)) return;
         if (getGeolocationSnackbarShown(context)) return;
 
         // If in incognito mode, don't show the snackbar now, but maybe show it later.
@@ -83,8 +83,7 @@ public class GeolocationSnackbarController implements SnackbarController {
         int durationMs = DeviceClassManager.isAccessibilityModeEnabled(view.getContext())
                 ? ACCESSIBILITY_SNACKBAR_DURATION_MS : SNACKBAR_DURATION_MS;
         final GeolocationSnackbarController controller = new GeolocationSnackbarController();
-        final Snackbar snackbar = Snackbar
-                .make(message, controller, Snackbar.TYPE_ACTION, Snackbar.UMA_OMNIBOX_GEOLOCATION)
+        final Snackbar snackbar = Snackbar.make(message, controller)
                 .setAction(settings, view)
                 .setSingleLine(false)
                 .setDuration(durationMs);
@@ -127,13 +126,18 @@ public class GeolocationSnackbarController implements SnackbarController {
     public void onDismissNoAction(Object actionData) {}
 
     @Override
+    public void onDismissForEachType(boolean isTimeout) {}
+
+    @Override
     public void onAction(Object actionData) {
         View view = (View) actionData;
         UiUtils.hideKeyboard(view);
 
         Context context = view.getContext();
-        Intent intent = PreferencesLauncher.createIntentForSettingsPage(
-                context, SearchEnginePreference.class.getName());
+        Intent intent = PreferencesLauncher.createIntentForSettingsPage(context, null);
+        Bundle fragmentArgs = new Bundle();
+        fragmentArgs.putBoolean(MainPreferences.EXTRA_SHOW_SEARCH_ENGINE_PICKER, true);
+        intent.putExtra(Preferences.EXTRA_SHOW_FRAGMENT_ARGUMENTS, fragmentArgs);
         context.startActivity(intent);
     }
 
@@ -143,7 +147,7 @@ public class GeolocationSnackbarController implements SnackbarController {
     static boolean getGeolocationSnackbarShown(Context context) {
         if (sGeolocationSnackbarShown == null) {
             // Cache the preference value since this method is called often.
-            sGeolocationSnackbarShown = ContextUtils.getAppSharedPreferences()
+            sGeolocationSnackbarShown = PreferenceManager.getDefaultSharedPreferences(context)
                     .getBoolean(GEOLOCATION_SNACKBAR_SHOWN_PREF, false);
         }
 
@@ -151,7 +155,7 @@ public class GeolocationSnackbarController implements SnackbarController {
     }
 
     private static void setGeolocationSnackbarShown(Context context) {
-        ContextUtils.getAppSharedPreferences().edit()
+        PreferenceManager.getDefaultSharedPreferences(context).edit()
                 .putBoolean(GEOLOCATION_SNACKBAR_SHOWN_PREF, true).apply();
         sGeolocationSnackbarShown = Boolean.TRUE;
     }

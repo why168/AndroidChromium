@@ -5,10 +5,7 @@
 
 <org.chromium.chrome.browser.toolbar.CustomTabToolbar
     xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:chrome="http://schemas.android.com/apk/res-auto"
-    android:id="@+id/toolbar"
-    android:layout_width="match_parent"
-    android:layout_height="@dimen/custom_tabs_control_container_height" >
+    xmlns:chrome="http://schemas.android.com/apk/res-auto" >
     <ImageButton
         android:id="@+id/close_button"
         style="@style/ToolbarButton"
@@ -19,7 +16,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="center_vertical" >
-        <org.chromium.chrome.browser.widget.TintedImageButton
+        <ImageButton
             android:id="@+id/security_button"
             style="@style/LocationBarButton"
             android:layout_width="@dimen/location_bar_icon_width"
@@ -27,9 +24,8 @@
             android:layout_gravity="center_vertical"
             android:contentDescription="@string/accessibility_toolbar_btn_site_info"
             android:scaleType="center"
-            android:visibility="invisible" />
-        <view
-            class="org.chromium.chrome.browser.toolbar.CustomTabToolbar$InterceptTouchLayout"
+            android:visibility="gone" />
+        <FrameLayout
             android:id="@+id/title_url_container"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -40,7 +36,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_gravity="top"
-                android:layout_marginBottom="@dimen/custom_tabs_toolbar_vertical_padding"
+                android:layout_marginBottom="16dp"
                 android:background="@null"
                 android:ellipsize="end"
                 android:inputType="none"
@@ -58,7 +54,7 @@
                 android:singleLine="true"
                 android:paddingEnd="@dimen/toolbar_edge_padding"
                 android:textSize="@dimen/location_bar_url_text_size" />
-        </view>
+        </FrameLayout>
     </FrameLayout>
     <ImageButton
         android:id="@+id/action_button"

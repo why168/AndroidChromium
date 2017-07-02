@@ -6,9 +6,7 @@ package org.chromium.chrome.browser.printing;
 
 import android.text.TextUtils;
 
-import org.chromium.base.ContextUtils;
 import org.chromium.base.Log;
-import org.chromium.chrome.R;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.printing.Printable;
 
@@ -21,15 +19,17 @@ import java.lang.ref.WeakReference;
  * reference.
  */
 public class TabPrinter implements Printable {
-    private static final String TAG = "printing";
+    private static String sDefaultTitle;
+    private static final String TAG = "cr.printing";
 
     private final WeakReference<Tab> mTab;
-    private final String mDefaultTitle;
 
     public TabPrinter(Tab tab) {
         mTab = new WeakReference<Tab>(tab);
-        mDefaultTitle = ContextUtils.getApplicationContext().getResources().getString(
-                R.string.menu_print);
+    }
+
+    public static void setDefaultTitle(String defaultTitle) {
+        sDefaultTitle = defaultTitle;
     }
 
     @Override
@@ -45,7 +45,7 @@ public class TabPrinter implements Printable {
     @Override
     public String getTitle() {
         Tab tab = mTab.get();
-        if (tab == null) return mDefaultTitle;
+        if (tab == null) return sDefaultTitle;
 
         String title = tab.getTitle();
         if (!TextUtils.isEmpty(title)) return title;
@@ -53,6 +53,6 @@ public class TabPrinter implements Printable {
         String url = tab.getUrl();
         if (!TextUtils.isEmpty(url)) return url;
 
-        return mDefaultTitle;
+        return sDefaultTitle;
     }
 }

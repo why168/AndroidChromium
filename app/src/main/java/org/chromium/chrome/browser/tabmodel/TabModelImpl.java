@@ -4,12 +4,11 @@
 
 package org.chromium.chrome.browser.tabmodel;
 
-import org.chromium.base.ContextUtils;
+import org.chromium.base.ApplicationStatus;
 import org.chromium.base.ObserverList;
 import org.chromium.base.TraceEvent;
-import org.chromium.chrome.browser.ChromeTabbedActivity;
 import org.chromium.chrome.browser.compositor.layouts.content.TabContentManager;
-import org.chromium.chrome.browser.ntp.RecentlyClosedBridge;
+import org.chromium.chrome.browser.device.DeviceClassManager;
 import org.chromium.chrome.browser.partnercustomizations.HomepageManager;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.tabmodel.TabCreatorManager.TabCreator;
@@ -46,7 +45,6 @@ public class TabModelImpl extends TabModelJniBridge {
     private final TabPersistentStore mTabSaver;
     private final TabModelDelegate mModelDelegate;
     private final ObserverList<TabModelObserver> mObservers;
-    private RecentlyClosedBridge mRecentlyClosedBridge;
 
     // Undo State Tracking -------------------------------------------------------------------------
 
@@ -63,16 +61,11 @@ public class TabModelImpl extends TabModelJniBridge {
      */
     private int mIndex = INVALID_TAB_INDEX;
 
-    /**
-     * Whether this tab model supports undoing.
-     */
-    private boolean mIsUndoSupported = true;
-
-    public TabModelImpl(boolean incognito, boolean isTabbedActivity, TabCreator regularTabCreator,
+    public TabModelImpl(boolean incognito, TabCreator regularTabCreator,
             TabCreator incognitoTabCreator, TabModelSelectorUma uma,
             TabModelOrderController orderController, TabContentManager tabContentManager,
-            TabPersistentStore tabSaver, TabModelDelegate modelDelegate, boolean supportUndo) {
-        super(incognito, isTabbedActivity);
+            TabPersistentStore tabSaver, TabModelDelegate modelDelegate) {
+        super(incognito);
         initializeNative();
         mRegularTabCreator = regularTabCreator;
         mIncognitoTabCreator = incognitoTabCreator;
@@ -81,16 +74,7 @@ public class TabModelImpl extends TabModelJniBridge {
         mTabContentManager = tabContentManager;
         mTabSaver = tabSaver;
         mModelDelegate = modelDelegate;
-        mIsUndoSupported = supportUndo;
         mObservers = new ObserverList<TabModelObserver>();
-        mRecentlyClosedBridge = new RecentlyClosedBridge(getProfile());
-    }
-
-    @Override
-    public void removeTab(Tab tab) {
-        removeTabAndSelectNext(tab, TabSelectionType.FROM_CLOSE, false, true);
-
-        for (TabModelObserver obs : mObservers) obs.tabRemoved(tab);
     }
 
     @Override
@@ -102,7 +86,7 @@ public class TabModelImpl extends TabModelJniBridge {
         mRewoundList.destroy();
         mTabs.clear();
         mObservers.clear();
-        mRecentlyClosedBridge.destroy();
+
         super.destroy();
     }
 
@@ -132,9 +116,7 @@ public class TabModelImpl extends TabModelJniBridge {
             index = mOrderController.determineInsertionIndex(type, index, tab);
             assert index <= mTabs.size();
 
-            if (tab.isIncognito() != isIncognito()) {
-                throw new IllegalStateException("Attempting to open tab in wrong model");
-            }
+            assert tab.isIncognito() == isIncognito();
 
             // TODO(dtrainor): Update the list of undoable tabs instead of committing it.
             commitAllTabClosures();
@@ -252,7 +234,8 @@ public class TabModelImpl extends TabModelJniBridge {
 
     @Override
     public boolean supportsPendingClosures() {
-        return !isIncognito() && mIsUndoSupported;
+        return !isIncognito()
+                && DeviceClassManager.enableUndo(ApplicationStatus.getApplicationContext());
     }
 
     @Override
@@ -288,9 +271,6 @@ public class TabModelImpl extends TabModelJniBridge {
         int insertIndex = prevIndex + 1;
         if (mIndex >= insertIndex) mIndex++;
         mTabs.add(insertIndex, tab);
-
-        WebContents webContents = tab.getWebContents();
-        if (webContents != null) webContents.setAudioMuted(false);
 
         boolean activeModel = mModelDelegate.getCurrentModel() == this;
 
@@ -390,7 +370,7 @@ public class TabModelImpl extends TabModelJniBridge {
 
         if (allowDelegation && mModelDelegate.closeAllTabsRequest(isIncognito())) return;
 
-        if (HomepageManager.isHomepageEnabled(ContextUtils.getApplicationContext())) {
+        if (HomepageManager.isHomepageEnabled(ApplicationStatus.getApplicationContext())) {
             commitAllTabClosures();
 
             for (int i = 0; i < getCount(); i++) getTabAt(i).setClosing(true);
@@ -455,9 +435,7 @@ public class TabModelImpl extends TabModelJniBridge {
 
     // TODO(aurimas): Move this method to TabModelSelector when notifications move there.
     private int getLastId(TabSelectionType type) {
-        if (type == TabSelectionType.FROM_CLOSE || type == TabSelectionType.FROM_EXIT) {
-            return Tab.INVALID_TAB_ID;
-        }
+        if (type == TabSelectionType.FROM_CLOSE) return Tab.INVALID_TAB_ID;
 
         // Get the current tab in the current tab model.
         Tab currentTab = TabModelUtils.getCurrentTab(mModelDelegate.getCurrentModel());
@@ -522,42 +500,24 @@ public class TabModelImpl extends TabModelJniBridge {
      *                called to actually delete and clean up {@code tab}.
      */
     private void startTabClosure(Tab tab, boolean animate, boolean uponExit, boolean canUndo) {
+        final int closingTabId = tab.getId();
+        final int closingTabIndex = indexOf(tab);
+
         tab.setClosing(true);
 
         for (TabModelObserver obs : mObservers) obs.willCloseTab(tab, animate);
-
-        TabSelectionType selectionType =
-                uponExit ? TabSelectionType.FROM_EXIT : TabSelectionType.FROM_CLOSE;
-        boolean pauseMedia = canUndo;
-        boolean updateRewoundList = !canUndo;
-        removeTabAndSelectNext(tab, selectionType, pauseMedia, updateRewoundList);
-    }
-
-    /**
-     * Removes the given tab from the tab model and selects a new tab.
-     */
-    private void removeTabAndSelectNext(Tab tab, TabSelectionType selectionType, boolean pauseMedia,
-            boolean updateRewoundList) {
-        assert selectionType == TabSelectionType.FROM_CLOSE
-                || selectionType == TabSelectionType.FROM_EXIT;
-
-        final int closingTabId = tab.getId();
-        final int closingTabIndex = indexOf(tab);
 
         Tab currentTab = TabModelUtils.getCurrentTab(this);
         Tab adjacentTab = getTabAt(closingTabIndex == 0 ? 1 : closingTabIndex - 1);
         Tab nextTab = getNextTabIfClosed(closingTabId);
 
         // TODO(dtrainor): Update the list of undoable tabs instead of committing it.
-        if (updateRewoundList) commitAllTabClosures();
+        if (!canUndo) commitAllTabClosures();
 
-        // Cancel or mute any media currently playing.
-        if (pauseMedia) {
+        // Cancel any media currently playing.
+        if (canUndo) {
             WebContents webContents = tab.getWebContents();
-            if (webContents != null) {
-                webContents.suspendAllMediaPlayers();
-                webContents.setAudioMuted(true);
-            }
+            if (webContents != null) webContents.releaseMediaPlayers();
         }
 
         mTabs.remove(tab);
@@ -571,12 +531,13 @@ public class TabModelImpl extends TabModelJniBridge {
             if (nextIsIncognito != isIncognito()) mIndex = indexOf(adjacentTab);
 
             TabModel nextModel = mModelDelegate.getModel(nextIsIncognito);
-            nextModel.setIndex(nextTabIndex, selectionType);
+            nextModel.setIndex(nextTabIndex,
+                    uponExit ? TabSelectionType.FROM_EXIT : TabSelectionType.FROM_CLOSE);
         } else {
             mIndex = nextTabIndex;
         }
 
-        if (updateRewoundList) mRewoundList.resetRewoundState();
+        if (!canUndo) mRewoundList.resetRewoundState();
     }
 
     /**
@@ -584,14 +545,14 @@ public class TabModelImpl extends TabModelJniBridge {
      * @param tab The {@link Tab} to close.
      */
     private void finalizeTabClosure(Tab tab) {
+        for (TabModelObserver obs : mObservers) obs.didCloseTab(tab);
+
         if (mTabContentManager != null) mTabContentManager.removeTabThumbnail(tab.getId());
         mTabSaver.removeTabFromQueues(tab);
 
         if (!isIncognito()) tab.createHistoricalTab();
 
         tab.destroy();
-
-        for (TabModelObserver obs : mObservers) obs.didCloseTab(tab.getId(), tab.isIncognito());
     }
 
     private class RewoundList implements TabList {
@@ -726,10 +687,10 @@ public class TabModelImpl extends TabModelJniBridge {
     }
 
     @Override
-    protected boolean createTabWithWebContents(Tab parent, boolean incognito,
-            WebContents webContents, int parentId) {
-        return getTabCreator(incognito).createTabWithWebContents(parent, webContents, parentId,
-                TabLaunchType.FROM_LONGPRESS_BACKGROUND);
+    protected boolean createTabWithWebContents(
+            boolean incognito, WebContents webContents, int parentId) {
+        return getTabCreator(incognito).createTabWithWebContents(
+                webContents, parentId, TabLaunchType.FROM_LONGPRESS_BACKGROUND);
     }
 
     @Override
@@ -745,22 +706,5 @@ public class TabModelImpl extends TabModelJniBridge {
     @Override
     protected boolean isSessionRestoreInProgress() {
         return mModelDelegate.isSessionRestoreInProgress();
-    }
-
-    @Override
-    public void openMostRecentlyClosedTab() {
-        // First try to recover tab from rewound list, same as {@link UndoBarController}.
-        if (mRewoundList.hasPendingClosures()) {
-            Tab tab = mRewoundList.getNextRewindableTab();
-            if (tab == null) return;
-            cancelTabClosure(tab.getId());
-            return;
-        }
-
-        // If there are no pending closures in the rewound list,
-        // then try to restore the tab from the native tab restore service.
-        mRecentlyClosedBridge.openRecentlyClosedTab();
-        // If there is only one tab, select it.
-        if (getCount() == 1) setIndex(0, TabSelectionType.FROM_NEW);
     }
 }

@@ -26,13 +26,15 @@ class ProgressAnimationSmooth implements ToolbarProgressBar.AnimationLogic {
     private float mVelocity;
 
     @Override
-    public void reset(float startProgress) {
-        mProgress = startProgress;
+    public void reset() {
+        mProgress = 0.0f;
         mVelocity = 0.0f;
     }
 
     @Override
     public float updateProgress(float targetProgress, float frameTimeSec, int resolution) {
+        assert mProgress <= targetProgress;
+
         final float acceleratingDuration = computeAcceleratingDuration(
                 targetProgress, frameTimeSec);
         final float deceleratingDuration = frameTimeSec - acceleratingDuration;

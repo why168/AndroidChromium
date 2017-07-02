@@ -12,19 +12,18 @@ import android.graphics.Rect;
 import android.graphics.RectF;
 import android.os.Bundle;
 import android.os.Handler;
-import android.support.design.widget.CoordinatorLayout;
 import android.support.v4.view.ViewCompat;
-import android.support.v4.view.accessibility.AccessibilityEventCompat;
 import android.support.v4.view.accessibility.AccessibilityNodeInfoCompat;
 import android.support.v4.widget.ExploreByTouchHelper;
 import android.util.AttributeSet;
 import android.util.Pair;
-import android.view.DragEvent;
 import android.view.MotionEvent;
+import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.accessibility.AccessibilityEvent;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.FrameLayout;
 
 import org.chromium.base.SysUtils;
@@ -40,12 +39,10 @@ import org.chromium.chrome.browser.compositor.layouts.content.ContentOffsetProvi
 import org.chromium.chrome.browser.compositor.layouts.content.TabContentManager;
 import org.chromium.chrome.browser.contextualsearch.ContextualSearchManagementDelegate;
 import org.chromium.chrome.browser.device.DeviceClassManager;
-import org.chromium.chrome.browser.dom_distiller.ReaderModeManagerDelegate;
 import org.chromium.chrome.browser.fullscreen.ChromeFullscreenManager;
 import org.chromium.chrome.browser.fullscreen.ChromeFullscreenManager.FullscreenListener;
 import org.chromium.chrome.browser.tab.EmptyTabObserver;
 import org.chromium.chrome.browser.tab.Tab;
-import org.chromium.chrome.browser.tab.TabContentViewParent;
 import org.chromium.chrome.browser.tab.TabObserver;
 import org.chromium.chrome.browser.tabmodel.EmptyTabModelSelectorObserver;
 import org.chromium.chrome.browser.tabmodel.TabCreatorManager;
@@ -53,6 +50,7 @@ import org.chromium.chrome.browser.tabmodel.TabModelSelector;
 import org.chromium.chrome.browser.util.ColorUtils;
 import org.chromium.chrome.browser.widget.ClipDrawableProgressBar.DrawingInfo;
 import org.chromium.chrome.browser.widget.ControlContainer;
+import org.chromium.content.browser.ContentReadbackHandler;
 import org.chromium.content.browser.ContentViewClient;
 import org.chromium.content.browser.ContentViewCore;
 import org.chromium.content.browser.SPenSupport;
@@ -72,9 +70,10 @@ import java.util.List;
  * This class also holds the {@link LayoutManager} responsible to describe the items to be
  * drawn by the UI compositor on the native side.
  */
-public class CompositorViewHolder extends CoordinatorLayout
-        implements ContentOffsetProvider, LayoutManagerHost, LayoutRenderHost, Invalidator.Host,
-                FullscreenListener {
+public class CompositorViewHolder extends FrameLayout
+        implements LayoutManagerHost, LayoutRenderHost, Invalidator.Host, FullscreenListener {
+    private static List<View> sCachedViewList = new ArrayList<View>();
+    private static List<ContentViewCore> sCachedCVCList = new ArrayList<ContentViewCore>();
 
     private boolean mIsKeyboardShowing = false;
 
@@ -90,6 +89,8 @@ public class CompositorViewHolder extends CoordinatorLayout
     private final ArrayList<Invalidator.Client> mPendingInvalidations =
             new ArrayList<Invalidator.Client>();
     private boolean mSkipInvalidation = false;
+
+    private boolean mSkipNextToolbarTextureUpdate = false;
 
     /**
      * A task to be performed after a resize event.
@@ -111,7 +112,7 @@ public class CompositorViewHolder extends CoordinatorLayout
     private Tab mTabVisible;
 
     /** The currently attached View. */
-    private TabContentViewParent mView;
+    private View mView;
 
     private TabObserver mTabObserver;
     private boolean mEnableCompositorTabStrip;
@@ -196,6 +197,12 @@ public class CompositorViewHolder extends CoordinatorLayout
             public void onContentChanged(Tab tab) {
                 CompositorViewHolder.this.onContentChanged();
             }
+
+            @Override
+            public void onOverlayContentViewCoreAdded(Tab tab, ContentViewCore content) {
+                initializeContentViewCore(content);
+                setSizeOfUnattachedView(content.getContainerView());
+            }
         };
 
         mEnableCompositorTabStrip = DeviceFormFactor.isTablet(getContext());
@@ -219,8 +226,7 @@ public class CompositorViewHolder extends CoordinatorLayout
         });
 
         mCompositorView = new CompositorView(getContext(), this);
-        // mCompositorView should always be the first child.
-        addView(mCompositorView, 0,
+        addView(mCompositorView,
                 new FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
     }
 
@@ -255,6 +261,13 @@ public class CompositorViewHolder extends CoordinatorLayout
             loader.registerResource(
                     R.id.control_container, mControlContainer.getToolbarResourceAdapter());
         }
+    }
+
+    /**
+     * @return The CompositorView.
+     */
+    public SurfaceHolder.Callback2 getSurfaceHolderCallback2() {
+        return mCompositorView;
     }
 
     /**
@@ -298,20 +311,21 @@ public class CompositorViewHolder extends CoordinatorLayout
         }
     }
 
-    /**
-     * Perform any initialization necessary for showing a reparented tab.
-     */
-    public void prepareForTabReparenting() {
-        if (mHasDrawnOnce) return;
-
-        // Set the background to white while we wait for the first swap of buffers. This gets
-        // corrected inside the view.
-        mCompositorView.setBackgroundColor(Color.WHITE);
-    }
-
     @Override
     public ResourceManager getResourceManager() {
         return mCompositorView.getResourceManager();
+    }
+
+    public ContentOffsetProvider getContentOffsetProvider() {
+        return mCompositorView;
+    }
+
+    /**
+     * @return The content readback handler.
+     */
+    public ContentReadbackHandler getContentReadbackHandler() {
+        if (mCompositorView == null) return null;
+        return mCompositorView.getContentReadbackHandler();
     }
 
     /**
@@ -330,8 +344,7 @@ public class CompositorViewHolder extends CoordinatorLayout
 
     @Override
     public boolean onInterceptTouchEvent(MotionEvent e) {
-        boolean consumedBySuper = super.onInterceptTouchEvent(e);
-        if (consumedBySuper) return true;
+        super.onInterceptTouchEvent(e);
 
         if (mLayoutManager == null) return false;
 
@@ -349,9 +362,6 @@ public class CompositorViewHolder extends CoordinatorLayout
 
     @Override
     public boolean onTouchEvent(MotionEvent e) {
-        boolean consumedBySuper = super.onTouchEvent(e);
-        if (consumedBySuper) return true;
-
         if (mFullscreenManager != null) mFullscreenManager.onMotionEvent(e);
         if (mFullscreenTouchEvent) return true;
         boolean consumed = mLayoutManager != null && mLayoutManager.onTouchEvent(e);
@@ -375,23 +385,6 @@ public class CompositorViewHolder extends CoordinatorLayout
         return super.dispatchHoverEvent(e);
     }
 
-    @Override
-    public boolean dispatchDragEvent(DragEvent e) {
-        ContentViewCore contentViewCore = mTabVisible.getContentViewCore();
-        if (contentViewCore == null) return false;
-
-        if (mLayoutManager != null) mLayoutManager.getViewportPixel(mCacheViewport);
-        contentViewCore.setCurrentTouchEventOffsets(-mCacheViewport.left, -mCacheViewport.top);
-        boolean ret = super.dispatchDragEvent(e);
-
-        int action = e.getAction();
-        if (action == DragEvent.ACTION_DRAG_EXITED || action == DragEvent.ACTION_DRAG_ENDED
-                || action == DragEvent.ACTION_DROP) {
-            contentViewCore.setCurrentTouchEventOffsets(0.f, 0.f);
-        }
-        return ret;
-    }
-
     /**
      * @return The {@link LayoutManager} associated with this view.
      */
@@ -406,29 +399,61 @@ public class CompositorViewHolder extends CoordinatorLayout
         return mCompositorView;
     }
 
-    private View getActiveView() {
-        if (mLayoutManager == null || mTabModelSelector == null) return null;
-        Tab tab = mTabModelSelector.getCurrentTab();
-        return tab != null ? tab.getContentView() : null;
-    }
-
-    private ContentViewCore getActiveContent() {
-        if (mLayoutManager == null || mTabModelSelector == null) return null;
-        Tab tab = mTabModelSelector.getCurrentTab();
-        return tab != null ? tab.getActiveContentViewCore() : null;
-    }
-
     @Override
     protected void onSizeChanged(int w, int h, int oldw, int oldh) {
         super.onSizeChanged(w, h, oldw, oldh);
-        View view = getActiveView();
-        if (view != null && setSizeOfUnattachedView(view)) requestRender();
+        if (mLayoutManager == null) return;
+
+        sCachedViewList.clear();
+        mLayoutManager.getActiveLayout().getAllViews(sCachedViewList);
+
+        boolean resized = false;
+        for (int i = 0; i < sCachedViewList.size(); i++) {
+            resized |= setSizeOfUnattachedView(sCachedViewList.get(i));
+        }
+        sCachedViewList.clear();
+
+        if (resized) requestRender();
     }
 
     @Override
     public void onPhysicalBackingSizeChanged(int width, int height) {
-        ContentViewCore content = getActiveContent();
-        if (content != null) adjustPhysicalBackingSize(content, width, height);
+        if (mLayoutManager == null) return;
+
+        sCachedCVCList.clear();
+        mLayoutManager.getActiveLayout().getAllContentViewCores(sCachedCVCList);
+
+        for (int i = 0; i < sCachedCVCList.size(); i++) {
+            adjustPhysicalBackingSize(sCachedCVCList.get(i), width, height);
+        }
+        sCachedCVCList.clear();
+    }
+
+    @Override
+    public void onOverdrawBottomHeightChanged(int overdrawHeight) {
+        if (mLayoutManager == null) return;
+
+        sCachedCVCList.clear();
+        mLayoutManager.getActiveLayout().getAllContentViewCores(sCachedCVCList);
+
+        for (int i = 0; i < sCachedCVCList.size(); i++) {
+            sCachedCVCList.get(i).onOverdrawBottomHeightChanged(overdrawHeight);
+        }
+        sCachedCVCList.clear();
+
+        mSkipNextToolbarTextureUpdate = true;
+        requestRender();
+    }
+
+    @Override
+    public int getCurrentOverdrawBottomHeight() {
+        if (mTabVisible != null) {
+            float overdrawBottomHeight = mTabVisible.getFullscreenOverdrawBottomHeightPix();
+            if (!Float.isNaN(overdrawBottomHeight)) {
+                return (int) overdrawBottomHeight;
+            }
+        }
+        return mCompositorView.getOverdrawBottomHeight();
     }
 
     /**
@@ -437,7 +462,7 @@ public class CompositorViewHolder extends CoordinatorLayout
     public void onStart() {
         if (mFullscreenManager != null) {
             mLastContentOffset = mFullscreenManager.getContentOffset();
-            mLastVisibleContentOffset = mFullscreenManager.getTopVisibleContentOffset();
+            mLastVisibleContentOffset = mFullscreenManager.getVisibleContentOffset();
             mFullscreenManager.addListener(this);
         }
         requestRender();
@@ -457,10 +482,10 @@ public class CompositorViewHolder extends CoordinatorLayout
     }
 
     @Override
-    public void onVisibleContentOffsetChanged(float offset, boolean needsAnimate) {
+    public void onVisibleContentOffsetChanged(float offset) {
         mLastVisibleContentOffset = offset;
         propagateViewportToLayouts(getWidth(), getHeight());
-        if (needsAnimate) requestRender();
+        requestRender();
     }
 
     @Override
@@ -486,26 +511,18 @@ public class CompositorViewHolder extends CoordinatorLayout
         if (actionMasked == MotionEvent.ACTION_DOWN
                 || actionMasked == MotionEvent.ACTION_HOVER_ENTER) {
             if (mLayoutManager != null) mLayoutManager.getViewportPixel(mCacheViewport);
-            contentViewCore.setCurrentTouchEventOffsets(-mCacheViewport.left, -mCacheViewport.top);
+            contentViewCore.setCurrentMotionEventOffsets(-mCacheViewport.left, -mCacheViewport.top);
         } else if (canClear && (actionMasked == MotionEvent.ACTION_UP
                                        || actionMasked == MotionEvent.ACTION_CANCEL
                                        || actionMasked == MotionEvent.ACTION_HOVER_EXIT)) {
-            contentViewCore.setCurrentTouchEventOffsets(0.f, 0.f);
+            contentViewCore.setCurrentMotionEventOffsets(0.f, 0.f);
         }
     }
 
     private void propagateViewportToLayouts(int contentWidth, int contentHeight) {
-        int heightMinusBrowserControls = contentHeight
-                - (getTopControlsHeightPixels() + getBottomControlsHeightPixels());
-        int bottomControlOffset = mFullscreenManager != null
-                ? (int) mFullscreenManager.getBottomControlOffset() : 0;
-        int viewportBottom =
-                contentHeight - (getBottomControlsHeightPixels() - bottomControlOffset);
-
-        // The only time that mCacheViewport and mCacheVisibleViewport are different is when the
-        // browser has manipulated the browser controls offset.
-        mCacheViewport.set(0, (int) mLastContentOffset, contentWidth, viewportBottom);
-        mCacheVisibleViewport.set(0, (int) mLastVisibleContentOffset, contentWidth, viewportBottom);
+        int heightMinusTopControls = contentHeight - getTopControlsHeightPixels();
+        mCacheViewport.set(0, (int) mLastContentOffset, contentWidth, contentHeight);
+        mCacheVisibleViewport.set(0, (int) mLastVisibleContentOffset, contentWidth, contentHeight);
         // TODO(changwan): check if this can be merged with setContentMotionEventOffsets.
         if (mTabVisible != null && mTabVisible.getContentViewCore() != null) {
             mTabVisible.getContentViewCore().setSmartClipOffsets(
@@ -513,7 +530,7 @@ public class CompositorViewHolder extends CoordinatorLayout
         }
         if (mLayoutManager != null) {
             mLayoutManager.pushNewViewport(
-                    mCacheViewport, mCacheVisibleViewport, heightMinusBrowserControls);
+                    mCacheViewport, mCacheVisibleViewport, heightMinusTopControls);
         }
     }
 
@@ -533,11 +550,19 @@ public class CompositorViewHolder extends CoordinatorLayout
                 assert mProgressBarDrawingInfo == null;
             }
 
-            mCompositorView.finalizeLayers(mLayoutManager, false,
+            mCompositorView.finalizeLayers(mLayoutManager, mSkipNextToolbarTextureUpdate,
                     mProgressBarDrawingInfo);
+
+            // TODO(changwan): Check if this hack can be removed.
+            // This is a hack to draw one more frame if the screen just rotated for Nexus 10 + L.
+            // See http://crbug/440469 for more.
+            if (mSkipNextToolbarTextureUpdate) {
+                requestRender();
+            }
         }
 
         TraceEvent.end("CompositorViewHolder:layout");
+        mSkipNextToolbarTextureUpdate = false;
     }
 
     @Override
@@ -641,47 +666,42 @@ public class CompositorViewHolder extends CoordinatorLayout
         mFullscreenManager = fullscreen;
         if (mFullscreenManager != null) {
             mLastContentOffset = mFullscreenManager.getContentOffset();
-            mLastVisibleContentOffset = mFullscreenManager.getTopVisibleContentOffset();
+            mLastVisibleContentOffset = mFullscreenManager.getVisibleContentOffset();
             mFullscreenManager.addListener(this);
         }
         propagateViewportToLayouts(getWidth(), getHeight());
     }
 
+    /**
+     * Note that the returned rect is reused for other calls.
+     */
     @Override
-    public int getBrowserControlsBackgroundColor() {
+    public Rect getVisibleViewport(Rect rect) {
+        if (rect == null) rect = new Rect();
+        rect.set(0, (int) mLastVisibleContentOffset, getWidth(), getHeight());
+        return rect;
+    }
+
+    @Override
+    public int getTopControlsBackgroundColor() {
         return mTabVisible == null ? Color.WHITE : mTabVisible.getThemeColor();
     }
 
     @Override
-    public float getBrowserControlsUrlBarAlpha() {
+    public float getTopControlsUrlBarAlpha() {
         return mTabVisible == null
                 ? 1.f
                 : ColorUtils.getTextBoxAlphaForToolbarBackground(mTabVisible);
     }
 
     @Override
-    public boolean areBrowserControlsPermanentlyHidden() {
-        return mFullscreenManager != null
-                && mFullscreenManager.areBrowserControlsPermanentlyHidden();
+    public boolean areTopControlsPermanentlyHidden() {
+        return mFullscreenManager != null && mFullscreenManager.areTopControlsPermanentlyHidden();
     }
 
     @Override
     public int getTopControlsHeightPixels() {
         return mFullscreenManager != null ? mFullscreenManager.getTopControlsHeight() : 0;
-    }
-
-    /**
-     * @return The height of the bottom conrols in pixels.
-     */
-    public int getBottomControlsHeightPixels() {
-        return mFullscreenManager != null ? mFullscreenManager.getBottomControlsHeight() : 0;
-    }
-
-    @Override
-    public int getOverlayTranslateY() {
-        return areBrowserControlsPermanentlyHidden()
-                ? getTopControlsHeightPixels()
-                : mCacheVisibleViewport.top;
     }
 
     /**
@@ -693,13 +713,13 @@ public class CompositorViewHolder extends CoordinatorLayout
     }
 
     @Override
-    public void onAttachedToWindow() {
+    protected void onAttachedToWindow() {
         mInvalidator.set(this);
         super.onAttachedToWindow();
     }
 
     @Override
-    public void onDetachedFromWindow() {
+    protected void onDetachedFromWindow() {
         if (mLayoutManager != null) mLayoutManager.destroy();
         flushInvalidation();
         mInvalidator.set(null);
@@ -723,7 +743,12 @@ public class CompositorViewHolder extends CoordinatorLayout
                 && mView != null;
     }
 
-    @Override
+    /**
+     * Hides the the keyboard if it was opened for the ContentView.
+     * @param postHideTask A task to run after the keyboard is done hiding and the view's
+     *         layout has been updated.  If the keyboard was not shown, the task will run
+     *         immediately.
+     */
     public void hideKeyboard(Runnable postHideTask) {
         // When this is called we actually want to hide the keyboard whatever owns it.
         // This includes hiding the keyboard, and dropping focus from the URL bar.
@@ -751,16 +776,14 @@ public class CompositorViewHolder extends CoordinatorLayout
      * @param androidContentContainer The {@link ViewGroup} the {@link LayoutManager} should bind
      *                                Android content to.
      * @param contextualSearchManager A {@link ContextualSearchManagementDelegate} instance.
-     * @param readerModeManager       A {@link ReaderModeManagerDelegate} instance.
      */
     public void onFinishNativeInitialization(TabModelSelector tabModelSelector,
             TabCreatorManager tabCreatorManager, TabContentManager tabContentManager,
             ViewGroup androidContentContainer,
-            ContextualSearchManagementDelegate contextualSearchManager,
-            ReaderModeManagerDelegate readerModeManager) {
+            ContextualSearchManagementDelegate contextualSearchManager) {
         assert mLayoutManager != null;
         mLayoutManager.init(tabModelSelector, tabCreatorManager, tabContentManager,
-                androidContentContainer, contextualSearchManager, readerModeManager,
+                androidContentContainer, contextualSearchManager,
                 mCompositorView.getResourceManager().getDynamicResourceLoader());
         mTabModelSelector = tabModelSelector;
         tabModelSelector.addObserver(new EmptyTabModelSelectorObserver() {
@@ -775,22 +798,25 @@ public class CompositorViewHolder extends CoordinatorLayout
             }
         });
 
-        mLayerTitleCache.setTabModelSelector(mTabModelSelector);
-
         onContentChanged();
     }
 
     private void updateContentOverlayVisibility(boolean show) {
         if (mView == null) return;
-        ContentViewCore content = getActiveContent();
+
+        sCachedCVCList.clear();
+        if (mLayoutManager != null) {
+            mLayoutManager.getActiveLayout().getAllContentViewCores(sCachedCVCList);
+        }
         if (show) {
             if (mView.getParent() != this) {
-                // During tab creation, we temporarily add the new tab's view to a FrameLayout to
-                // measure and lay it out. This way we could show the animation in the stack view.
-                // Therefore we should remove the view from that temporary FrameLayout here.
-                UiUtils.removeViewFromParent(mView);
+                // Make sure the view isn't a child of something else before we attempt to add it.
+                if (mView.getParent() instanceof ViewGroup) {
+                    ((ViewGroup) mView.getParent()).removeView(mView);
+                }
 
-                if (content != null) {
+                for (int i = 0; i < sCachedCVCList.size(); i++) {
+                    ContentViewCore content = sCachedCVCList.get(i);
                     assert content.isAlive();
                     content.getContainerView().setVisibility(View.VISIBLE);
                     if (mFullscreenManager != null) {
@@ -798,20 +824,17 @@ public class CompositorViewHolder extends CoordinatorLayout
                     }
                 }
 
-                CoordinatorLayout.LayoutParams layoutParams;
-                if (mView.getLayoutParams() instanceof CoordinatorLayout.LayoutParams) {
-                    layoutParams = (CoordinatorLayout.LayoutParams) mView.getLayoutParams();
-                } else {
-                    layoutParams = new CoordinatorLayout.LayoutParams(
-                            LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT);
+                FrameLayout.LayoutParams layoutParams = new FrameLayout.LayoutParams(
+                        LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT);
+                if (mView.getLayoutParams() instanceof MarginLayoutParams) {
+                    MarginLayoutParams existingLayoutParams =
+                            (MarginLayoutParams) mView.getLayoutParams();
+                    layoutParams.leftMargin = existingLayoutParams.leftMargin;
+                    layoutParams.rightMargin = existingLayoutParams.rightMargin;
+                    layoutParams.topMargin = existingLayoutParams.topMargin;
+                    layoutParams.bottomMargin = existingLayoutParams.bottomMargin;
                 }
-                layoutParams.setBehavior(mView.getBehavior());
-                // CompositorView has index of 0; TabContentViewParent has index of 1; omnibox
-                // result container (the scrim) has index of 2, Snackbar (if any) has index of 3.
-                // Setting index here explicitly to avoid TabContentViewParent hiding the scrim.
-                // TODO(ianwen): Use more advanced technologies to ensure z-order of the children of
-                // this class, instead of hard-coding.
-                addView(mView, 1, layoutParams);
+                addView(mView, layoutParams);
 
                 setFocusable(false);
                 setFocusableInTouchMode(false);
@@ -824,12 +847,22 @@ public class CompositorViewHolder extends CoordinatorLayout
                 setFocusable(true);
                 setFocusableInTouchMode(true);
 
-                if (content != null) {
+                for (int i = 0; i < sCachedCVCList.size(); i++) {
+                    ContentViewCore content = sCachedCVCList.get(i);
                     if (content.isAlive()) content.getContainerView().setVisibility(View.INVISIBLE);
+                }
+
+                if (hasFocus()) {
+                    InputMethodManager manager = (InputMethodManager) getContext().getSystemService(
+                            Context.INPUT_METHOD_SERVICE);
+                    if (manager.isActive(this)) {
+                        manager.hideSoftInputFromWindow(getWindowToken(), 0, null);
+                    }
                 }
                 removeView(mView);
             }
         }
+        sCachedCVCList.clear();
     }
 
     @Override
@@ -853,7 +886,7 @@ public class CompositorViewHolder extends CoordinatorLayout
     private void setTab(Tab tab) {
         if (tab != null) tab.loadIfNeeded();
 
-        TabContentViewParent newView = tab != null ? tab.getView() : null;
+        View newView = tab != null ? tab.getView() : null;
         if (mView == newView) return;
 
         // TODO(dtrainor): Look into changing this only if the views differ, but still parse the
@@ -874,16 +907,34 @@ public class CompositorViewHolder extends CoordinatorLayout
     }
 
     /**
-     * Sets the correct size for {@link View} on {@code tab} and sets the correct rendering
-     * parameters on {@link ContentViewCore} on {@code tab}.
+     * Sets the correct size for all {@link View}s on {@code tab} and sets the correct rendering
+     * parameters on all {@link ContentViewCore}s on {@code tab}.
      * @param tab The {@link Tab} to initialize.
      */
     private void initializeTab(Tab tab) {
-        ContentViewCore content = tab.getActiveContentViewCore();
-        if (content != null) initializeContentViewCore(content);
+        sCachedCVCList.clear();
+        if (mLayoutManager != null) {
+            mLayoutManager.getActiveLayout().getAllContentViewCores(sCachedCVCList);
+        }
 
-        View view = tab.getContentView();
-        if (view != tab.getView() || !tab.isNativePage()) setSizeOfUnattachedView(view);
+        for (int i = 0; i < sCachedCVCList.size(); i++) {
+            initializeContentViewCore(sCachedCVCList.get(i));
+        }
+        sCachedCVCList.clear();
+
+        sCachedViewList.clear();
+        tab.getAllContentViews(sCachedViewList);
+
+        for (int i = 0; i < sCachedViewList.size(); i++) {
+            View view = sCachedViewList.get(i);
+            // Calling View#measure() and View#layout() on a View before adding it to the view
+            // hierarchy seems to cause issues with compound drawables on some versions of Android.
+            // We don't need to proactively size the NTP as we don't need the Android view to render
+            // if it's not actually attached to the view hierarchy (http://crbug.com/462114).
+            if (view == tab.getView() && tab.isNativePage()) continue;
+            setSizeOfUnattachedView(view);
+        }
+        sCachedViewList.clear();
     }
 
     /**
@@ -892,13 +943,14 @@ public class CompositorViewHolder extends CoordinatorLayout
      * @param contentViewCore The {@link ContentViewCore} to initialize.
      */
     private void initializeContentViewCore(ContentViewCore contentViewCore) {
-        contentViewCore.setCurrentTouchEventOffsets(0.f, 0.f);
-        contentViewCore.setTopControlsHeight(getTopControlsHeightPixels(),
-                contentViewCore.doBrowserControlsShrinkBlinkSize());
-        contentViewCore.setBottomControlsHeight(getBottomControlsHeightPixels());
+        contentViewCore.setCurrentMotionEventOffsets(0.f, 0.f);
+        contentViewCore.setTopControlsHeight(
+                getTopControlsHeightPixels(), contentViewCore.doTopControlsShrinkBlinkSize());
 
         adjustPhysicalBackingSize(contentViewCore,
                 mCompositorView.getWidth(), mCompositorView.getHeight());
+
+        contentViewCore.onOverdrawBottomHeightChanged(mCompositorView.getOverdrawBottomHeight());
     }
 
     /**
@@ -976,8 +1028,6 @@ public class CompositorViewHolder extends CoordinatorLayout
     @Override
     public void invalidateAccessibilityProvider() {
         if (mNodeProvider != null) {
-            mNodeProvider.sendEventForVirtualView(mNodeProvider.getFocusedVirtualView(),
-                    AccessibilityEventCompat.TYPE_VIEW_ACCESSIBILITY_FOCUS_CLEARED);
             mNodeProvider.invalidateRoot();
         }
     }

@@ -8,7 +8,7 @@ package org.chromium.chrome.browser.infobar;
 /**
  * Functions needed to display an InfoBar UI.
  */
-public interface InfoBarView extends InfoBarContainerLayout.Item {
+public interface InfoBarView {
     /**
      * Prepares the InfoBar for display and adds InfoBar-specific controls to the layout.
      * @param layout Layout containing all of the controls.
@@ -30,4 +30,10 @@ public interface InfoBarView extends InfoBarContainerLayout.Item {
      * @param isPrimaryButton True if the primary button was clicked, false otherwise.
      */
     public void onButtonClicked(boolean isPrimaryButton);
+
+    /**
+     * Sets whether or not controls for this View should be clickable.
+     * @param state If set to false, controls cannot be clicked and will be grayed out.
+     */
+    public void setControlsEnabled(boolean state);
 }

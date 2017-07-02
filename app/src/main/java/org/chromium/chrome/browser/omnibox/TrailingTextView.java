@@ -4,7 +4,6 @@
 
 package org.chromium.chrome.browser.omnibox;
 
-import android.annotation.SuppressLint;
 import android.content.Context;
 import android.support.v7.widget.AppCompatTextView;
 import android.util.AttributeSet;
@@ -30,20 +29,14 @@ public class TrailingTextView extends AppCompatTextView {
     }
 
     @Override
-    @SuppressLint("MissingSuperCall")
     public void onPopulateAccessibilityEvent(AccessibilityEvent event) {
-        // Intentionally empty so this view is ignored by accessibility.
     }
 
     @Override
-    @SuppressLint("MissingSuperCall")
     public void onInitializeAccessibilityEvent(AccessibilityEvent event) {
-        // Intentionally empty so this view is ignored by accessibility.
     }
 
     @Override
-    @SuppressLint("MissingSuperCall")
     public void onInitializeAccessibilityNodeInfo(AccessibilityNodeInfo info) {
-        // Intentionally empty so this view is ignored by accessibility.
     }
 }

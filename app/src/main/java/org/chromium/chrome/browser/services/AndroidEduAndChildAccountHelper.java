@@ -7,6 +7,7 @@ package org.chromium.chrome.browser.services;
 import android.content.Context;
 
 import org.chromium.base.Callback;
+import org.chromium.base.Log;
 import org.chromium.chrome.browser.ChromeApplication;
 import org.chromium.chrome.browser.childaccounts.ChildAccountService;
 
@@ -15,8 +16,8 @@ import org.chromium.chrome.browser.childaccounts.ChildAccountService;
  * Usage:
  * new AndroidEduAndChildAccountHelper() { override onParametersReady() }.start(appContext).
  */
-public abstract class AndroidEduAndChildAccountHelper extends Callback<Boolean>
-        implements AndroidEduOwnerCheckCallback {
+public abstract class AndroidEduAndChildAccountHelper
+        implements Callback<Boolean>, AndroidEduOwnerCheckCallback {
     private Boolean mIsAndroidEduDevice;
     private Boolean mHasChildAccount;
     // Abbreviated to < 20 chars.
@@ -41,19 +42,23 @@ public abstract class AndroidEduAndChildAccountHelper extends Callback<Boolean>
      * @param appContext The application context.
      */
     public void start(Context appContext) {
+        Log.d(TAG, "before checking child and EDU");
         ChildAccountService.checkHasChildAccount(appContext, this);
         ((ChromeApplication) appContext).checkIsAndroidEduDevice(this);
         // TODO(aruslan): Should we start a watchdog to kill if Child/Edu stuff takes too long?
+        Log.d(TAG, "returning from start");
     }
 
     private void checkDone() {
         if (mIsAndroidEduDevice == null || mHasChildAccount == null) return;
+        Log.d(TAG, "parameters are ready");
         onParametersReady();
     }
 
     // AndroidEdu.OwnerCheckCallback:
     @Override
     public void onSchoolCheckDone(boolean isAndroidEduDevice) {
+        Log.d(TAG, "onSchoolCheckDone");
         mIsAndroidEduDevice = isAndroidEduDevice;
         checkDone();
     }
@@ -61,6 +66,7 @@ public abstract class AndroidEduAndChildAccountHelper extends Callback<Boolean>
     // Callback<Boolean>:
     @Override
     public void onResult(Boolean hasChildAccount) {
+        Log.d(TAG, "onChildAccountChecked");
         mHasChildAccount = hasChildAccount;
         checkDone();
     }

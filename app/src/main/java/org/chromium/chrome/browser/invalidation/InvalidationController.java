@@ -16,13 +16,12 @@ import org.chromium.base.ApplicationState;
 import org.chromium.base.ApplicationStatus;
 import org.chromium.base.FieldTrialList;
 import org.chromium.base.VisibleForTesting;
-import org.chromium.chrome.browser.ChromeFeatureList;
 import org.chromium.chrome.browser.sync.ProfileSyncService;
 import org.chromium.components.invalidation.InvalidationClientService;
-import org.chromium.components.signin.ChromeSigninController;
-import org.chromium.components.sync.AndroidSyncSettings;
-import org.chromium.components.sync.ModelType;
-import org.chromium.components.sync.notifier.InvalidationIntentProtocol;
+import org.chromium.sync.AndroidSyncSettings;
+import org.chromium.sync.ModelType;
+import org.chromium.sync.notifier.InvalidationIntentProtocol;
+import org.chromium.sync.signin.ChromeSigninController;
 
 import java.util.HashSet;
 
@@ -169,9 +168,6 @@ public class InvalidationController implements ApplicationStatus.ApplicationStat
      * sync types.  Starts the client if needed.
      */
     public void ensureStartedAndUpdateRegisteredTypes() {
-        ProfileSyncService syncService = ProfileSyncService.get();
-        if (syncService == null) return;
-
         mStarted = true;
 
         // Ensure GCM has been initialized.
@@ -182,7 +178,7 @@ public class InvalidationController implements ApplicationStatus.ApplicationStat
         mEnableSessionInvalidationsTimer.resume();
 
         HashSet<Integer> typesToRegister = new HashSet<Integer>();
-        typesToRegister.addAll(syncService.getPreferredDataTypes());
+        typesToRegister.addAll(ProfileSyncService.get().getPreferredDataTypes());
         if (!mSessionInvalidationsEnabled) {
             typesToRegister.remove(ModelType.SESSIONS);
             typesToRegister.remove(ModelType.FAVICON_TRACKING);
@@ -192,8 +188,7 @@ public class InvalidationController implements ApplicationStatus.ApplicationStat
         Intent registerIntent = InvalidationIntentProtocol.createRegisterIntent(
                 ChromeSigninController.get(mContext).getSignedInUser(),
                 typesToRegister);
-        registerIntent.setClass(
-                mContext, InvalidationClientService.getRegisteredClass());
+        registerIntent.setClass(mContext, InvalidationClientService.class);
         mContext.startService(registerIntent);
     }
 
@@ -223,8 +218,7 @@ public class InvalidationController implements ApplicationStatus.ApplicationStat
     private void start() {
         mStarted = true;
         mEnableSessionInvalidationsTimer.resume();
-        Intent intent = new Intent(
-                mContext, InvalidationClientService.getRegisteredClass());
+        Intent intent = new Intent(mContext, InvalidationClientService.class);
         mContext.startService(intent);
     }
 
@@ -234,17 +228,9 @@ public class InvalidationController implements ApplicationStatus.ApplicationStat
     public void stop() {
         mStarted = false;
         mEnableSessionInvalidationsTimer.pause();
-        Intent intent = new Intent(
-                mContext, InvalidationClientService.getRegisteredClass());
+        Intent intent = new Intent(mContext, InvalidationClientService.class);
         intent.putExtra(InvalidationIntentProtocol.EXTRA_STOP, true);
         mContext.startService(intent);
-    }
-
-    /**
-     * Returns whether the invalidation client has been started.
-     */
-    public boolean isStarted() {
-        return mStarted;
     }
 
     /**
@@ -281,15 +267,15 @@ public class InvalidationController implements ApplicationStatus.ApplicationStat
         synchronized (LOCK) {
             if (sInstance == null) {
                 // The PageRevisitInstrumentation trial needs sessions invalidations to be on such
-                // that local session data is current and can be used to perform checks.
+                // that local session data is current and can be used to perform checks. Its
+                // preference should override the AndroidSessionNotifications trial.
                 boolean requireInvalidationsForInstrumentation =
                         FieldTrialList.findFullName("PageRevisitInstrumentation").equals("Enabled");
-                // If the NTP is trying to suggest foreign tabs, then recieving invalidations is
-                // vital, otherwise data is stale and less useful.
-                boolean requireInvalidationsForSuggestions = ChromeFeatureList.isEnabled(
-                        ChromeFeatureList.NTP_FOREIGN_SESSIONS_SUGGESTIONS);
+                boolean tryToDisableInvalidationsAsOptimization =
+                        FieldTrialList.findFullName("AndroidSessionNotifications")
+                                .equals("Disabled");
                 boolean canDisableSessionInvalidations = !requireInvalidationsForInstrumentation
-                        && !requireInvalidationsForSuggestions;
+                        && tryToDisableInvalidationsAsOptimization;
 
                 boolean canUseGcmUpstream =
                         FieldTrialList.findFullName("InvalidationsGCMUpstream").equals("Enabled");

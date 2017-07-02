@@ -17,8 +17,7 @@ public class MidiInfo extends PermissionInfo {
     }
 
     protected void setNativePreferenceValue(
-            String origin, String embedder, ContentSetting value, boolean isIncognito) {
-        WebsitePreferenceBridge.nativeSetMidiSettingForOrigin(
-                origin, embedder, value.toInt(), isIncognito);
+            String origin, String embedder, int value, boolean isIncognito) {
+        WebsitePreferenceBridge.nativeSetMidiSettingForOrigin(origin, embedder, value, isIncognito);
     }
 }

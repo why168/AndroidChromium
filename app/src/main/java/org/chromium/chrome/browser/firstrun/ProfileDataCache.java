@@ -20,8 +20,8 @@ import org.chromium.chrome.R;
 import org.chromium.chrome.browser.profiles.Profile;
 import org.chromium.chrome.browser.profiles.ProfileDownloader;
 import org.chromium.chrome.browser.profiles.ProfileDownloader.Observer;
-import org.chromium.components.signin.AccountManagerHelper;
-import org.chromium.ui.display.DisplayAndroid;
+import org.chromium.sync.signin.AccountManagerHelper;
+import org.chromium.ui.gfx.DeviceDisplayInfo;
 
 import java.util.HashMap;
 
@@ -45,7 +45,7 @@ public class ProfileDataCache implements Observer {
         public String givenName;
     }
 
-    private final HashMap<String, CacheEntry> mCacheEntries = new HashMap<>();
+    private final HashMap<String, CacheEntry> mCacheEntries = new HashMap<String, CacheEntry>();
 
     private final Bitmap mPlaceholderImage;
     private final int mImageSizePx;
@@ -62,10 +62,9 @@ public class ProfileDataCache implements Observer {
         mContext = context;
         mProfile = profile;
 
-        // There's no WindowAndroid present at this time, so get the default display.
-        final DisplayAndroid displayAndroid = DisplayAndroid.getNonMultiDisplay(context);
-        mImageSizePx = (int) Math.ceil(PROFILE_IMAGE_SIZE_DP * displayAndroid.getDipScale());
-        mImageStrokePx = (int) Math.ceil(PROFILE_IMAGE_STROKE_DP * displayAndroid.getDipScale());
+        final DeviceDisplayInfo info = DeviceDisplayInfo.create(context);
+        mImageSizePx = (int) Math.ceil(PROFILE_IMAGE_SIZE_DP * info.getDIPScale());
+        mImageStrokePx = (int) Math.ceil(PROFILE_IMAGE_STROKE_DP * info.getDIPScale());
         mImageStrokeColor = Color.WHITE;
 
         Bitmap placeHolder = BitmapFactory.decodeResource(mContext.getResources(),
@@ -143,7 +142,7 @@ public class ProfileDataCache implements Observer {
             Bitmap bitmap) {
         bitmap = getCroppedBitmap(bitmap);
         mCacheEntries.put(accountId, new CacheEntry(bitmap, fullName, givenName));
-        if (mObserver != null) mObserver.onProfileDownloaded(accountId, fullName, givenName,
+        if (mObserver != null) mObserver.onProfileDownloaded(accountId, givenName, fullName,
                 bitmap);
     }
 

@@ -35,7 +35,7 @@ public class FullscreenMediaRouteButton extends MediaRouteButton {
      */
     public void initialize(MediaRouteController controller) {
         setRouteSelector(controller.buildMediaRouteSelector());
-        setDialogFactory(new MediaRouteControllerDialogFactory(controller.getMediaStateListener()));
+        setDialogFactory(new ChromeMediaRouteDialogFactory());
     }
 
     @Override

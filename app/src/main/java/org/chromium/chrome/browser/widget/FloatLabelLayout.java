@@ -172,11 +172,6 @@ public class FloatLabelLayout extends LinearLayout {
         if (TextUtils.isEmpty(mHint)) {
             setHint(mEditText.getHint());
         }
-
-        // If we do not have a valid content description, set it to the hint text.
-        if (TextUtils.isEmpty(mEditText.getContentDescription())) {
-            mEditText.setContentDescription(mHint);
-        }
     }
 
     private void updateLabelVisibility(boolean animate) {

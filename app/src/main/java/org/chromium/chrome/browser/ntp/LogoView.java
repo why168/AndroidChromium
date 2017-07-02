@@ -132,10 +132,11 @@ public class LogoView extends FrameLayout implements OnClickListener {
     }
 
     /**
-     * @return True after we receive an animated logo from the server.
+     * @return True after the animated GIF logo starts playing. False otherwise.
      */
-    private boolean isAnimatedLogoShowing() {
-        return mAnimatedLogoDrawable != null;
+    public boolean isAnimatedLogoShowing() {
+        return mAnimatedLogoDrawable != null && mAnimatedLogoDrawable.isRunning()
+                && mAnimatedLogoDrawable.isValid();
     }
 
     /**

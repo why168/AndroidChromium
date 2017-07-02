@@ -9,7 +9,6 @@ import org.chromium.base.VisibleForTesting;
 /**
  * Fetches data about the given app.
  */
-@VisibleForTesting
 public abstract class AppDetailsDelegate {
     /**
      * Class to inform when the app's details have been retrieved.

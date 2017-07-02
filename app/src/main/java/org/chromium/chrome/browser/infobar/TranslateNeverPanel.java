@@ -23,12 +23,13 @@ public class TranslateNeverPanel implements TranslateSubPanel {
     @Override
     public void createContent(Context context, InfoBarLayout layout) {
         String changeLanguage = context.getString(
-                R.string.translate_never_translate_message_text, mOptions.sourceLanguageName());
+                R.string.translate_never_translate_message_text, mOptions.sourceLanguage());
         layout.setMessage(changeLanguage);
 
-        layout.setButtons(context.getString(R.string.translate_never_translate_site),
+        layout.setButtons(
+                context.getString(R.string.translate_never_translate_site),
                 context.getString(R.string.translate_never_translate_language,
-                        mOptions.sourceLanguageName()));
+                        mOptions.sourceLanguage()));
     }
 
     @Override

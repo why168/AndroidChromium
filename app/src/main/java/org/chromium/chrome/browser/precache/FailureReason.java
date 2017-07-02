@@ -28,9 +28,10 @@ enum FailureReason {
 
     // Deprecated: SCREEN_ON(6).
 
-    // Deprecated: NOT_ENOUGH_TIME_SINCE_LAST_PRECACHE(7),
+    /** PrecacheServiceLauncher#timeSinceLastPrecacheMs() is too recent. */
+    NOT_ENOUGH_TIME_SINCE_LAST_PRECACHE(7),
 
-    /** PrecacheController#isPrecaching() returns true. */
+    /** PrecacheService#isPrecaching() returns true. */
     CURRENTLY_PRECACHING(8);
 
     /** Returns the set of reasons as a bit vector. */

@@ -518,7 +518,4 @@ public class StackTab implements ChromeAnimation.Animatable<StackTab.Property> {
                 break;
         }
     }
-
-    @Override
-    public void onPropertyAnimationFinished(Property prop) {}
 }

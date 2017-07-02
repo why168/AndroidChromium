@@ -4,14 +4,10 @@
 
 package org.chromium.chrome.browser.sync.ui;
 
-import android.app.Activity;
 import android.app.Dialog;
 import android.app.DialogFragment;
 import android.os.Bundle;
 import android.support.v7.app.AlertDialog;
-import android.text.SpannableString;
-import android.text.method.LinkMovementMethod;
-import android.text.style.ClickableSpan;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -21,10 +17,6 @@ import android.widget.TextView;
 import android.widget.TextView.OnEditorActionListener;
 
 import org.chromium.chrome.R;
-import org.chromium.chrome.browser.help.HelpAndFeedback;
-import org.chromium.chrome.browser.profiles.Profile;
-import org.chromium.ui.text.SpanApplier;
-import org.chromium.ui.text.SpanApplier.SpanInfo;
 
 /**
  * Dialog to ask the user to enter a new custom passphrase.
@@ -55,66 +47,40 @@ public class PassphraseCreationDialogFragment extends DialogFragment {
             }
         });
 
-        TextView instructionsView =
-                (TextView) view.findViewById(R.id.custom_passphrase_instructions);
-        instructionsView.setMovementMethod(LinkMovementMethod.getInstance());
-        instructionsView.setText(getInstructionsText());
-
         AlertDialog dialog = new AlertDialog.Builder(getActivity(), R.style.AlertDialogTheme)
                 .setView(view)
-                .setTitle(R.string.sync_passphrase_type_custom_dialog_title)
-                .setPositiveButton(R.string.save, null)
+                .setTitle(R.string.sync_passphrase_type_custom)
+                .setPositiveButton(R.string.ok, null)
                 .setNegativeButton(R.string.cancel, null)
                 .create();
         dialog.getDelegate().setHandleNativeActionModesEnabled(false);
         return dialog;
     }
 
-    private SpannableString getInstructionsText() {
-        final Activity activity = getActivity();
-        return SpanApplier.applySpans(
-                activity.getString(R.string.sync_custom_passphrase),
-                new SpanInfo("<learnmore>", "</learnmore>", new ClickableSpan() {
-                    @Override
-                    public void onClick(View view) {
-                        HelpAndFeedback.getInstance(activity).show(activity,
-                                activity.getString(R.string.help_context_change_sync_passphrase),
-                                Profile.getLastUsedProfile(), null);
-                    }
-                }));
-    }
-
     @Override
     public void onStart() {
         super.onStart();
         AlertDialog d = (AlertDialog) getDialog();
-        if (d != null) {
-            // Override the button's onClick listener. The default gets set in the dialog's
-            // onCreate, when it is shown (in super.onStart()), so we have to do this here.
-            // Otherwise the dialog will close when the button is clicked regardless of what else we
-            // do.
-            d.getButton(Dialog.BUTTON_POSITIVE).setOnClickListener(new View.OnClickListener() {
-                @Override
-                public void onClick(View v) {
-                    tryToSubmitPassphrase();
-                }
-            });
-        }
+        // Override the button's onClick listener. The default gets set in the dialog's onCreate,
+        // when it is shown (in super.onStart()), so we have to do this here. Otherwise the dialog
+        // will close when the button is clicked regardless of what else we do.
+        d.getButton(Dialog.BUTTON_POSITIVE).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                tryToSubmitPassphrase();
+            }
+        });
     }
 
     private void tryToSubmitPassphrase() {
         String passphrase = mEnterPassphrase.getText().toString();
         String confirmPassphrase = mConfirmPassphrase.getText().toString();
 
-        if (!passphrase.equals(confirmPassphrase)) {
-            mEnterPassphrase.setError(null);
-            mConfirmPassphrase.setError(getString(R.string.sync_passphrases_do_not_match));
-            mConfirmPassphrase.requestFocus();
+        if (passphrase.isEmpty()) {
+            mConfirmPassphrase.setError(getString(R.string.sync_passphrase_cannot_be_blank));
             return;
-        } else if (passphrase.isEmpty()) {
-            mConfirmPassphrase.setError(null);
-            mEnterPassphrase.setError(getString(R.string.sync_passphrase_cannot_be_blank));
-            mEnterPassphrase.requestFocus();
+        } else if (!passphrase.equals(confirmPassphrase)) {
+            mConfirmPassphrase.setError(getString(R.string.sync_passphrases_do_not_match));
             return;
         }
 

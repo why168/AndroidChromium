@@ -4,7 +4,7 @@
 
 package org.chromium.chrome.browser.compositor;
 
-import org.chromium.chrome.browser.tab.Tab;
+import android.graphics.Bitmap;
 
 /**
  * The interface that defines a {@link TitleCache}. The {@link TitleCache} is supposed to
@@ -12,13 +12,16 @@ import org.chromium.chrome.browser.tab.Tab;
  * implementation.
  */
 public interface TitleCache {
-
     /**
-     * Update the title (favicon and text), and return the title string.
-     * @param tab The tab to draw title cache.
-     * @param defaultTitle The default title to use when title and even URL are both empty.
+     * Put a {@link Tab} title bitmap in the cache.
+     * @param tabId         The id of the {@link Tab}.
+     * @param titleBitmap   The {@link Bitmap} representing the title of the {@link ChromeTab}.
+     * @param faviconBitmap The {@link Bitmap} representing the favicon of the {@link ChromeTab}.
+     * @param isIncognito   True if the title is for an icognito tab.
+     * @param isRtl         True if the title should be RTL.
      */
-    String getUpdatedTitle(Tab tab, String defaultTitle);
+    void put(int tabId, Bitmap titleBitmap, Bitmap faviconBitmap, boolean isIncognito,
+            boolean isRtl);
 
     /**
      * Removes a title image from the cache.

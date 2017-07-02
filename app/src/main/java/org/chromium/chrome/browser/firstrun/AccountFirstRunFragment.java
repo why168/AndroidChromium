@@ -11,28 +11,24 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 
-import org.chromium.base.metrics.RecordUserAction;
 import org.chromium.chrome.R;
-import org.chromium.chrome.browser.signin.AccountSigninView;
-import org.chromium.chrome.browser.signin.SigninAccessPoint;
-import org.chromium.chrome.browser.signin.SigninManager;
 
 /**
  * A {@link Fragment} meant to handle sync setup for the first run experience.
  */
-public class AccountFirstRunFragment extends FirstRunPage implements AccountSigninView.Delegate {
+public class AccountFirstRunFragment extends FirstRunPage {
     // Per-page parameters:
     public static final String FORCE_SIGNIN_ACCOUNT_TO = "ForceSigninAccountTo";
     public static final String PRESELECT_BUT_ALLOW_TO_CHANGE = "PreselectButAllowToChange";
     public static final String IS_CHILD_ACCOUNT = "IsChildAccount";
 
-    private AccountSigninView mView;
+    private AccountFirstRunView mView;
 
     @Override
     public View onCreateView(
             LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
-        mView = (AccountSigninView) inflater.inflate(
-                R.layout.account_signin_view, container, false);
+        mView = (AccountFirstRunView) inflater.inflate(
+                R.layout.fre_choose_account, container, false);
         return mView;
     }
 
@@ -40,7 +36,12 @@ public class AccountFirstRunFragment extends FirstRunPage implements AccountSign
     public void onViewCreated(View view, Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
 
-        mView.init(getPageDelegate().getProfileDataCache(), this, new AccountSigninView.Listener() {
+        mView.setListener(new AccountFirstRunView.Listener() {
+            @Override
+            public void onAccountSelectionConfirmed(String accountName) {
+                mView.switchToSignedMode();
+            }
+
             @Override
             public void onAccountSelectionCanceled() {
                 getPageDelegate().refuseSignIn();
@@ -53,11 +54,15 @@ public class AccountFirstRunFragment extends FirstRunPage implements AccountSign
             }
 
             @Override
-            public void onAccountSelected(String accountName, boolean settingsClicked) {
+            public void onSigningInCompleted(String accountName) {
                 getPageDelegate().acceptSignIn(accountName);
-                if (settingsClicked) {
-                    getPageDelegate().askToOpenSignInSettings();
-                }
+                advanceToNextPage();
+            }
+
+            @Override
+            public void onSettingsButtonClicked(String accountName) {
+                getPageDelegate().acceptSignIn(accountName);
+                getPageDelegate().askToOpenSyncSettings();
                 advanceToNextPage();
             }
 
@@ -69,6 +74,8 @@ public class AccountFirstRunFragment extends FirstRunPage implements AccountSign
             }
         });
 
+        mView.init(getPageDelegate().getProfileDataCache());
+
         mView.setIsChildAccount(getProperties().getBoolean(IS_CHILD_ACCOUNT));
 
         String forcedAccountName =
@@ -76,10 +83,14 @@ public class AccountFirstRunFragment extends FirstRunPage implements AccountSign
         if (!TextUtils.isEmpty(forcedAccountName)) {
             mView.switchToForcedAccountMode(forcedAccountName);
         }
+    }
 
-        RecordUserAction.record("MobileFre.SignInShown");
-        RecordUserAction.record("Signin_Signin_FromStartPage");
-        SigninManager.logSigninStartAccessPoint(SigninAccessPoint.START_PAGE);
+    @Override
+    public void onStart() {
+        super.onStart();
+        mView.setButtonsEnabled(true);
+        mView.setProfileDataCache(getPageDelegate().getProfileDataCache());
+        getPageDelegate().onSigninDialogShown();
     }
 
     // FirstRunPage:

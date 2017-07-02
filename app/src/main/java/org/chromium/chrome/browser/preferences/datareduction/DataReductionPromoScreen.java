@@ -10,6 +10,7 @@ import android.content.Context;
 import android.content.DialogInterface;
 import android.os.Build;
 import android.os.Bundle;
+import android.preference.PreferenceManager;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.Button;
@@ -26,6 +27,8 @@ import org.chromium.ui.widget.Toast;
  */
 public class DataReductionPromoScreen extends Dialog implements View.OnClickListener,
         DialogInterface.OnDismissListener {
+    private static final String SHARED_PREF_DISPLAYED_PROMO = "displayed_data_reduction_promo";
+
     private int mState;
 
     private static View getContentView(Context context) {
@@ -41,11 +44,15 @@ public class DataReductionPromoScreen extends Dialog implements View.OnClickList
         // The promo is displayed if Chrome is launched directly (i.e., not with the intent to
         // navigate to and view a URL on startup), the instance is part of the field trial,
         // and the promo has not been displayed before.
-        if (!DataReductionPromoUtils.canShowPromos()) return;
-        if (DataReductionPromoUtils.getDisplayedFreOrSecondRunPromo()) return;
+        if (!DataReductionProxySettings.getInstance().isDataReductionProxyPromoAllowed()) {
+            return;
+        }
+        if (DataReductionProxySettings.getInstance().isDataReductionProxyManaged()) return;
+        if (DataReductionProxySettings.getInstance().isDataReductionProxyEnabled()) return;
+        if (getDisplayedDataReductionPromo(parentActivity)) return;
         // Showing the promo dialog in multiwindow mode is broken on Galaxy Note devices:
         // http://crbug.com/354696. If we're in multiwindow mode, save the dialog for later.
-        if (MultiWindowUtils.getInstance().isLegacyMultiWindow(parentActivity)) return;
+        if (MultiWindowUtils.getInstance().isMultiWindow(parentActivity)) return;
 
         DataReductionPromoScreen promoScreen = new DataReductionPromoScreen(parentActivity);
         promoScreen.setOnDismissListener(promoScreen);
@@ -112,7 +119,7 @@ public class DataReductionPromoScreen extends Dialog implements View.OnClickList
 
     @Override
     public void onDismiss(DialogInterface dialog) {
-        DataReductionPromoUtils.saveFreOrSecondRunPromoDisplayed();
+        setDisplayedDataReductionPromo(getContext(), true);
     }
 
     private void handleEnableButtonPressed() {
@@ -134,5 +141,28 @@ public class DataReductionPromoScreen extends Dialog implements View.OnClickList
             mState = DataReductionProxyUma.ACTION_INDEX_BOUNDARY;
         }
         super.dismiss();
+    }
+
+    /**
+     * Returns whether the Data Reduction Proxy promo has been displayed before.
+     *
+     * @param context An Android context.
+     * @return Whether the Data Reduction Proxy promo has been displayed.
+     */
+    public static boolean getDisplayedDataReductionPromo(Context context) {
+        return PreferenceManager.getDefaultSharedPreferences(context).getBoolean(
+                SHARED_PREF_DISPLAYED_PROMO, false);
+    }
+
+    /**
+     * Sets whether the Data Reduction Proxy promo has been displayed.
+     *
+     * @param context An Android context.
+     * @param displayed Whether the Data Reduction Proxy was displayed.
+     */
+    public static void setDisplayedDataReductionPromo(Context context, boolean displayed) {
+        PreferenceManager.getDefaultSharedPreferences(context).edit()
+                .putBoolean(SHARED_PREF_DISPLAYED_PROMO, displayed)
+                .apply();
     }
 }

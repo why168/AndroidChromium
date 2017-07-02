@@ -12,10 +12,11 @@
         android:id="@+id/toolbar_container"
         android:layout_width="match_parent"
         android:layout_height="wrap_content">
-        <ViewStub
-            android:id="@+id/toolbar_stub"
+        <include
+            android:id="@+id/toolbar"
             android:layout_width="match_parent"
-            android:layout_height="@dimen/custom_tabs_control_container_height" />
+            android:layout_height="@dimen/custom_tabs_control_container_height"
+            layout="@layout/custom_tabs_toolbar" />
         <ImageView
             android:id="@+id/toolbar_shadow"
             android:src="@drawable/toolbar_shadow"

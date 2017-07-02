@@ -10,7 +10,7 @@ import org.chromium.base.annotations.JNINamespace;
 /**
  * Java representation of a scene layer.
  */
-@JNINamespace("android")
+@JNINamespace("chrome::android")
 public class SceneLayer {
     private long mNativePtr;
 

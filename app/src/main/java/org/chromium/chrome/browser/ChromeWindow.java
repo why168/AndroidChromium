@@ -6,8 +6,7 @@ package org.chromium.chrome.browser;
 
 import android.app.Activity;
 
-import org.chromium.chrome.browser.infobar.InfoBarIdentifier;
-import org.chromium.chrome.browser.infobar.SimpleConfirmInfoBarBuilder;
+import org.chromium.chrome.browser.infobar.MessageInfoBar;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.ui.base.ActivityWindowAndroid;
 
@@ -36,8 +35,10 @@ public class ChromeWindow extends ActivityWindowAndroid {
         Tab tab = activity != null ? ((ChromeActivity) activity).getActivityTab() : null;
 
         if (tab != null) {
-            SimpleConfirmInfoBarBuilder.create(
-                    tab, InfoBarIdentifier.CHROME_WINDOW_ERROR, error, false);
+            String message = (error);
+            MessageInfoBar infobar = new MessageInfoBar(message);
+            infobar.setExpireOnNavigation(false);
+            tab.getInfoBarContainer().addInfoBar(infobar);
         } else {
             super.showCallbackNonExistentError(error);
         }

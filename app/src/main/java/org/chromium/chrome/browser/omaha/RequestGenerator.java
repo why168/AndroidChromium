@@ -47,7 +47,7 @@ public abstract class RequestGenerator {
 
     /**
      * Generates the XML for the current request.
-     * Follows the format laid out at https://github.com/google/omaha/blob/wiki/ServerProtocolV3.md
+     * Follows the format laid out at http://code.google.com/p/omaha/wiki/ServerProtocol
      * with some additional dummy values supplied.
      */
     public String generateXML(String sessionID, String versionName, long installAge,

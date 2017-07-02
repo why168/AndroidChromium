@@ -7,17 +7,14 @@ package org.chromium.chrome.browser;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.AsyncTask;
-import android.os.StrictMode;
+import android.preference.PreferenceManager;
 
 import com.google.android.gms.gcm.GcmNetworkManager;
 import com.google.android.gms.gcm.OneoffTask;
 import com.google.android.gms.gcm.Task;
 
-import org.chromium.base.ContextUtils;
-import org.chromium.base.Log;
 import org.chromium.base.VisibleForTesting;
 import org.chromium.base.annotations.CalledByNative;
-import org.chromium.base.metrics.RecordHistogram;
 import org.chromium.chrome.browser.externalauth.ExternalAuthUtils;
 import org.chromium.chrome.browser.externalauth.UserRecoverableErrorHandler;
 
@@ -29,10 +26,6 @@ import org.chromium.chrome.browser.externalauth.UserRecoverableErrorHandler;
  * Thread model: This class is to be run on the UI thread only.
  */
 public class BackgroundSyncLauncher {
-    private static final String TAG = "BgSyncLauncher";
-
-    public static final String TASK_TAG = "BackgroundSync Event";
-
     static final String PREF_BACKGROUND_SYNC_LAUNCH_NEXT_ONLINE = "bgsync_launch_next_online";
     // The instance of BackgroundSyncLauncher currently owned by a C++
     // BackgroundSyncLauncherAndroid, if any. If it is non-null then the browser is running.
@@ -43,7 +36,7 @@ public class BackgroundSyncLauncher {
     /**
      * Disables the automatic use of the GCMNetworkManager. When disabled, the methods which
      * interact with GCM can still be used, but will not be called automatically on creation, or by
-     * {@link #launchBrowserIfStopped}.
+     * {@link #launchBrowserWhenNextOnlineIfStopped}.
      *
      * Automatic GCM use is disabled by tests, and also by this class if it is determined on
      * creation that the installed Play Services library is out of date.
@@ -76,8 +69,7 @@ public class BackgroundSyncLauncher {
     }
 
     /**
-     * Callback for {@link #shouldLaunchBrowserIfStopped}. The run method is invoked on the UI
-     * thread.
+     * Callback for {@link #shouldLaunchWhenNextOnline}. The run method is invoked on the UI thread.
      */
     public static interface ShouldLaunchCallback { public void run(Boolean shouldLaunch); }
 
@@ -89,12 +81,12 @@ public class BackgroundSyncLauncher {
      * @param context The application context.
      * @param sharedPreferences The shared preferences.
      */
-    protected static void shouldLaunchBrowserIfStopped(
+    protected static void shouldLaunchWhenNextOnline(
             final Context context, final ShouldLaunchCallback callback) {
         new AsyncTask<Void, Void, Boolean>() {
             @Override
             protected Boolean doInBackground(Void... params) {
-                SharedPreferences prefs = ContextUtils.getAppSharedPreferences();
+                SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
                 return prefs.getBoolean(PREF_BACKGROUND_SYNC_LAUNCH_NEXT_ONLINE, false);
             }
             @Override
@@ -105,23 +97,19 @@ public class BackgroundSyncLauncher {
     }
 
     /**
-     * Manages the scheduled tasks which re-launch the browser when the device next goes online
-     * after at least {@code minDelayMs} milliseconds.
+     * Manages the scheduled tasks which re-launch the browser when the device next goes online.
      * This method is called by C++ as background sync registrations are added and removed. When the
      * {@link BackgroundSyncLauncher} singleton is created (on browser start), this is called to
      * remove any pre-existing scheduled tasks.
-     * @param context The application context.
-     * @param shouldLaunch Whether or not to launch the browser in the background.
-     * @param minDelayMs The minimum time to wait before checking on the browser process.
      */
     @VisibleForTesting
     @CalledByNative
-    protected void launchBrowserIfStopped(
-            final Context context, final boolean shouldLaunch, final long minDelayMs) {
+    protected void launchBrowserWhenNextOnlineIfStopped(
+            final Context context, final boolean shouldLaunch) {
         new AsyncTask<Void, Void, Void>() {
             @Override
             protected Void doInBackground(Void... params) {
-                SharedPreferences prefs = ContextUtils.getAppSharedPreferences();
+                SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
                 prefs.edit()
                         .putBoolean(PREF_BACKGROUND_SYNC_LAUNCH_NEXT_ONLINE, shouldLaunch)
                         .apply();
@@ -131,13 +119,9 @@ public class BackgroundSyncLauncher {
             protected void onPostExecute(Void params) {
                 if (sGCMEnabled) {
                     if (shouldLaunch) {
-                        RecordHistogram.recordBooleanHistogram(
-                                "BackgroundSync.LaunchTask.ScheduleSuccess",
-                                scheduleLaunchTask(context, mScheduler, minDelayMs));
+                        scheduleLaunchTask(context, mScheduler);
                     } else {
-                        RecordHistogram.recordBooleanHistogram(
-                                "BackgroundSync.LaunchTask.CancelSuccess",
-                                removeScheduledTasks(mScheduler));
+                        removeScheduledTasks(mScheduler);
                     }
                 }
             }
@@ -145,7 +129,7 @@ public class BackgroundSyncLauncher {
     }
 
     /**
-     * Returns true if the native browser has started and created an instance of {@link
+     * True if the native browser has started and created an instance of {@link
      * BackgroundSyncLauncher}.
      */
     protected static boolean hasInstance() {
@@ -153,83 +137,38 @@ public class BackgroundSyncLauncher {
     }
 
     protected BackgroundSyncLauncher(Context context) {
+        // Check to see if Play Services is up to date, and disable GCM if not.
+        // This will not automatically set {@link sGCMEnabled} to true, in case it has been disabled
+        // in tests.
+        if (sGCMEnabled && !canUseGooglePlayServices(context)) {
+            setGCMEnabled(false);
+        }
         mScheduler = GcmNetworkManager.getInstance(context);
-        launchBrowserIfStopped(context, false, 0);
+        launchBrowserWhenNextOnlineIfStopped(context, false);
     }
 
-    private static boolean canUseGooglePlayServices(Context context) {
+    private boolean canUseGooglePlayServices(Context context) {
         return ExternalAuthUtils.getInstance().canUseGooglePlayServices(
                 context, new UserRecoverableErrorHandler.Silent());
     }
 
-    /**
-     * Returns true if the Background Sync Manager should be automatically disabled on startup.
-     * This is currently only the case if Play Services is not up to date, since any sync attempts
-     * which fail cannot be reregistered. Better to wait until Play Services is updated before
-     * attempting them.
-     *
-     * @param context The application context.
-     */
-    @CalledByNative
-    private static boolean shouldDisableBackgroundSync(Context context) {
-        // Check to see if Play Services is up to date, and disable GCM if not.
-        // This will not automatically set {@link sGCMEnabled} to true, in case it has been
-        // disabled in tests.
-        if (sGCMEnabled) {
-            boolean isAvailable = true;
-            if (!canUseGooglePlayServices(context)) {
-                setGCMEnabled(false);
-                Log.i(TAG, "Disabling Background Sync because Play Services is not up to date.");
-                isAvailable = false;
-            }
-            RecordHistogram.recordBooleanHistogram(
-                    "BackgroundSync.LaunchTask.PlayServicesAvailable", isAvailable);
-        }
-        return !sGCMEnabled;
-    }
-
-    private static boolean scheduleLaunchTask(
-            Context context, GcmNetworkManager scheduler, long minDelayMs) {
+    private static void scheduleLaunchTask(Context context, GcmNetworkManager scheduler) {
         // Google Play Services may not be up to date, if the application was not installed through
         // the Play Store. In this case, scheduling the task will fail silently.
-        final long minDelaySecs = minDelayMs / 1000;
         OneoffTask oneoff = new OneoffTask.Builder()
-                                    .setService(ChromeBackgroundService.class)
-                                    .setTag(TASK_TAG)
+                                    .setService(BackgroundSyncLauncherService.class)
+                                    .setTag("BackgroundSync Event")
                                     // We have to set a non-zero execution window here
-                                    .setExecutionWindow(minDelaySecs, minDelaySecs + 1)
+                                    .setExecutionWindow(0, 1)
                                     .setRequiredNetwork(Task.NETWORK_STATE_CONNECTED)
                                     .setPersisted(true)
                                     .setUpdateCurrent(true)
                                     .build();
-        try {
-            scheduler.schedule(oneoff);
-        } catch (IllegalArgumentException e) {
-            // Disable GCM for the remainder of this session.
-            setGCMEnabled(false);
-            // Return false so that the failure will be logged.
-            return false;
-        }
-        return true;
+        scheduler.schedule(oneoff);
     }
 
-    private static boolean removeScheduledTasks(GcmNetworkManager scheduler) {
-        // Third-party code causes broadcast to touch disk. http://crbug.com/614679
-        StrictMode.ThreadPolicy oldPolicy = StrictMode.allowThreadDiskReads();
-        try {
-            scheduler.cancelTask(TASK_TAG, ChromeBackgroundService.class);
-        } catch (IllegalArgumentException e) {
-            // This occurs when BackgroundSyncLauncherService is not found in the application
-            // manifest. This should not happen in code that reaches here, but has been seen in
-            // the past. See https://crbug.com/548314
-            // Disable GCM for the remainder of this session.
-            setGCMEnabled(false);
-            // Return false so that the failure will be logged.
-            return false;
-        } finally {
-            StrictMode.setThreadPolicy(oldPolicy);
-        }
-        return true;
+    private static void removeScheduledTasks(GcmNetworkManager scheduler) {
+        scheduler.cancelAllTasks(BackgroundSyncLauncherService.class);
     }
 
     /**
@@ -248,15 +187,11 @@ public class BackgroundSyncLauncher {
                     @Override
                     public void run(Boolean shouldLaunch) {
                         if (shouldLaunch) {
-                            // It's unclear what time the sync event was supposed to fire, so fire
-                            // without delay and let the browser reschedule if necessary.
-                            // TODO(iclelland): If this fails, report the failure via UMA (not now,
-                            // since the browser is not running, but on next startup.)
-                            scheduleLaunchTask(context, scheduler, 0);
+                            scheduleLaunchTask(context, scheduler);
                         }
                     }
                 };
-        BackgroundSyncLauncher.shouldLaunchBrowserIfStopped(context, callback);
+        BackgroundSyncLauncher.shouldLaunchWhenNextOnline(context, callback);
     }
 
     @VisibleForTesting

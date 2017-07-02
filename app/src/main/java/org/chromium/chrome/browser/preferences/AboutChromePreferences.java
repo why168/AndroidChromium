@@ -4,7 +4,6 @@
 
 package org.chromium.chrome.browser.preferences;
 
-import android.content.Context;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager.NameNotFoundException;
 import android.os.Build;
@@ -48,7 +47,7 @@ public class AboutChromePreferences extends PreferenceFragment {
         PrefServiceBridge prefServiceBridge = PrefServiceBridge.getInstance();
         AboutVersionStrings versionStrings = prefServiceBridge.getAboutVersionStrings();
         Preference p = findPreference(PREF_APPLICATION_VERSION);
-        p.setSummary(getApplicationVersion(getActivity(), versionStrings.getApplicationVersion()));
+        p.setSummary(getApplicationVersion(versionStrings.getApplicationVersion()));
         p = findPreference(PREF_OS_VERSION);
         p.setSummary(versionStrings.getOSVersion());
         p = findPreference(PREF_LEGAL_INFORMATION);
@@ -56,11 +55,7 @@ public class AboutChromePreferences extends PreferenceFragment {
         p.setSummary(getString(R.string.legal_information_summary, currentYear));
     }
 
-    /**
-     * Build the application version to be shown.  In particular, this ensures the debug build
-     * versions are more useful.
-     */
-    public static String getApplicationVersion(Context context, String version) {
+    private String getApplicationVersion(String version) {
         if (ChromeVersionInfo.isOfficialBuild()) {
             return version;
         }
@@ -68,14 +63,14 @@ public class AboutChromePreferences extends PreferenceFragment {
         // For developer builds, show how recently the app was installed/updated.
         PackageInfo info;
         try {
-            info = context.getPackageManager().getPackageInfo(
-                    context.getPackageName(), 0);
+            info = getActivity().getPackageManager().getPackageInfo(
+                    getActivity().getPackageName(), 0);
         } catch (NameNotFoundException e) {
             return version;
         }
         CharSequence updateTimeString = DateUtils.getRelativeTimeSpanString(
                 info.lastUpdateTime, System.currentTimeMillis(), 0);
-        return context.getString(R.string.version_with_update_time, version,
+        return getActivity().getString(R.string.version_with_update_time, version,
                 updateTimeString);
     }
 }

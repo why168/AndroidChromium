@@ -38,11 +38,6 @@ public class AutofillServerProfilePreferences
         }
         assert mGUID != null;
         AutofillProfile profile = PersonalDataManager.getInstance().getProfile(mGUID);
-        if (profile == null) {
-            getActivity().finish();
-            return;
-        }
-
         assert !profile.getIsLocal();
 
         Preference profileDescription = findPreference(PREF_SERVER_PROFILE_DESCRIPTION);

@@ -11,7 +11,6 @@ import android.preference.PreferenceFragment;
 
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.accessibility.FontSizePrefs;
-import org.chromium.chrome.browser.accessibility.FontSizePrefs.FontSizePrefsObserver;
 
 import java.text.NumberFormat;
 
@@ -21,26 +20,43 @@ import java.text.NumberFormat;
 public class AccessibilityPreferences extends PreferenceFragment
         implements OnPreferenceChangeListener {
 
-    static final String PREF_TEXT_SCALE = "text_scale";
-    static final String PREF_FORCE_ENABLE_ZOOM = "force_enable_zoom";
+    /**
+     * This value gives the threshold beyond which force enable zoom is automatically turned on. It
+     * is chosen such that force enable zoom will be activated when the accessibility large text
+     * setting is on (i.e. this value should be the same as or lesser than the font size scale used
+     * by accessiblity large text).
+     */
+    public static final float FORCE_ENABLE_ZOOM_THRESHOLD_MULTIPLIER = 1.3f;
+
+    public static final String PREF_TEXT_SCALE = "text_scale";
+    public static final String PREF_FORCE_ENABLE_ZOOM = "force_enable_zoom";
 
     private NumberFormat mFormat;
+    private FontPrefsObserver mFontPrefsObserver;
     private FontSizePrefs mFontSizePrefs;
 
     private TextScalePreference mTextScalePref;
     private SeekBarLinkedCheckBoxPreference mForceEnableZoomPref;
 
-    private FontSizePrefsObserver mFontSizePrefsObserver = new FontSizePrefsObserver() {
+    // Saves the previous font scale factor because AccessibilityPreferences no longer has access
+    // to it after the font scale factor change notification.
+    private float mPreviousFontScaleFactor;
+
+    private class FontPrefsObserver implements FontSizePrefs.Observer {
         @Override
-        public void onFontScaleFactorChanged(float fontScaleFactor, float userFontScaleFactor) {
-            updateTextScaleSummary(userFontScaleFactor);
+        public void onChangeFontSize(float font) {
+            processFontWithForceEnableZoom(font);
+            updateTextScaleSummary(font);
         }
 
         @Override
-        public void onForceEnableZoomChanged(boolean enabled) {
+        public void onChangeForceEnableZoom(boolean enabled) {
             mForceEnableZoomPref.setChecked(enabled);
         }
-    };
+
+        @Override
+        public void onChangeUserSetForceEnableZoom(boolean enabled) {}
+    }
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -50,6 +66,7 @@ public class AccessibilityPreferences extends PreferenceFragment
 
         mFormat = NumberFormat.getPercentInstance();
         mFontSizePrefs = FontSizePrefs.getInstance(getActivity());
+        mFontPrefsObserver = new FontPrefsObserver();
 
         mTextScalePref = (TextScalePreference) findPreference(PREF_TEXT_SCALE);
         mTextScalePref.setOnPreferenceChangeListener(this);
@@ -65,34 +82,52 @@ public class AccessibilityPreferences extends PreferenceFragment
         super.onStart();
         updateValues();
         mTextScalePref.startObservingFontPrefs();
-        mFontSizePrefs.addObserver(mFontSizePrefsObserver);
+        mFontSizePrefs.addObserver(mFontPrefsObserver);
     }
 
     @Override
     public void onStop() {
         mTextScalePref.stopObservingFontPrefs();
-        mFontSizePrefs.removeObserver(mFontSizePrefsObserver);
+        mFontSizePrefs.removeObserver(mFontPrefsObserver);
         super.onStop();
     }
 
     private void updateValues() {
-        float userFontScaleFactor = mFontSizePrefs.getUserFontScaleFactor();
-        mTextScalePref.setValue(userFontScaleFactor);
-        updateTextScaleSummary(userFontScaleFactor);
+        float fontScaleFactor = mFontSizePrefs.getFontScaleFactor();
+        mTextScalePref.setValue(fontScaleFactor);
+        updateTextScaleSummary(fontScaleFactor);
 
         mForceEnableZoomPref.setChecked(mFontSizePrefs.getForceEnableZoom());
     }
 
-    private void updateTextScaleSummary(float userFontScaleFactor) {
-        mTextScalePref.setSummary(mFormat.format(userFontScaleFactor));
+    private void updateTextScaleSummary(float fontScaleFactor) {
+        mTextScalePref.setSummary(mFormat.format(fontScaleFactor));
+        mPreviousFontScaleFactor = fontScaleFactor;
+    }
+
+    private void processFontWithForceEnableZoom(float fontScaleFactor) {
+        float threshold = FORCE_ENABLE_ZOOM_THRESHOLD_MULTIPLIER;
+        if (mPreviousFontScaleFactor < threshold && fontScaleFactor >= threshold
+                && !mFontSizePrefs.getForceEnableZoom()) {
+            // If the slider is moved from below the threshold to above the threshold, we check
+            // force enable zoom even if the user has previously set it.
+            mFontSizePrefs.setForceEnableZoom(true);
+            mFontSizePrefs.setUserSetForceEnableZoom(false);
+        } else if (mPreviousFontScaleFactor >= threshold && fontScaleFactor < threshold
+                && !mFontSizePrefs.getUserSetForceEnableZoom()) {
+            // If the slider is moved from above the threshold to below it, we only uncheck force
+            // enable zoom if it was not set manually.
+            mFontSizePrefs.setForceEnableZoom(false);
+        }
     }
 
     @Override
     public boolean onPreferenceChange(Preference preference, Object newValue) {
         if (PREF_TEXT_SCALE.equals(preference.getKey())) {
-            mFontSizePrefs.setUserFontScaleFactor((Float) newValue);
+            mFontSizePrefs.setFontScaleFactor((Float) newValue);
         } else if (PREF_FORCE_ENABLE_ZOOM.equals(preference.getKey())) {
-            mFontSizePrefs.setForceEnableZoomFromUser((Boolean) newValue);
+            mFontSizePrefs.setUserSetForceEnableZoom(true);
+            mFontSizePrefs.setForceEnableZoom((Boolean) newValue);
         }
         return true;
     }

@@ -23,16 +23,13 @@ class JsonObjectHttpRequest extends HttpRequest<JSONObject> {
     /**
      * Construct a JSON object request.
      * @param url The url to make this HTTP request to.
-     * @param userAgent The string to set as the User-Agent request header.
-     * @param acceptLanguage The string to set as the Accept-Language request header.
      * @param jsonObject The JSON payload.
      * @param callback The callback run when the HTTP response is received.
      * @throws MalformedURLException on invalid url
      */
-    public JsonObjectHttpRequest(String url, String userAgent, String acceptLanguage,
-            JSONObject jsonObject, RequestCallback callback)
+    public JsonObjectHttpRequest(String url, JSONObject jsonObject, RequestCallback callback)
             throws MalformedURLException {
-        super(url, userAgent, acceptLanguage, callback);
+        super(url, callback);
         mJsonObject = jsonObject;
     }
 

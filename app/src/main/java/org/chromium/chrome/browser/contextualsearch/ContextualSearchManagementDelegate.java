@@ -20,13 +20,28 @@ public interface ContextualSearchManagementDelegate {
     ChromeActivity getChromeActivity();
 
     /**
+     * @return Whether the Search Panel is showing.
+     */
+    boolean isShowingSearchPanel();
+
+    /**
+     * @return Whether the Opt-out promo is available to be be shown in the panel.
+     */
+    boolean isPromoAvailable();
+
+    /**
+     * Called when the promo Panel gets closed, to log the outcome.
+     */
+    void logPromoOutcome();
+
+    /**
      * Promotes the current Content View Core in the Contextual Search Panel to its own Tab.
      */
     void promoteToTab();
 
     /**
      * Sets the handle to the ContextualSearchPanel.
-     * @param panel The ContextualSearchPanel.
+     * @param delegate The ContextualSearchPanel.
      */
     void setContextualSearchPanel(ContextualSearchPanel panel);
 
@@ -42,6 +57,11 @@ public interface ContextualSearchManagementDelegate {
      * compatibility mode.
      */
     void openResolvedSearchUrlInNewTab();
+
+    /**
+     * Preserves the Base Page's selection next time it loses focus.
+     */
+    void preserveBasePageSelectionOnNextLossOfFocus();
 
     /**
      * Dismisses the Contextual Search bar completely.  This will hide any panel that's currently
@@ -66,9 +86,4 @@ public interface ContextualSearchManagementDelegate {
      * @return An OverlayContentDelegate to watch events on the panel's content.
      */
     OverlayContentDelegate getOverlayContentDelegate();
-
-    /**
-     * Log the current state of Contextual Search.
-     */
-    void logCurrentState();
 }

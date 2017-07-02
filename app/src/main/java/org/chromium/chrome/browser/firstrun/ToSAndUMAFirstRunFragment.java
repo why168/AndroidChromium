@@ -7,6 +7,7 @@ package org.chromium.chrome.browser.firstrun;
 import android.content.Context;
 import android.os.Bundle;
 import android.text.method.LinkMovementMethod;
+import android.text.style.ClickableSpan;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.View.OnClickListener;
@@ -17,8 +18,7 @@ import android.widget.TextView;
 
 import org.chromium.base.ApiCompatibilityUtils;
 import org.chromium.chrome.R;
-import org.chromium.chrome.browser.ChromeVersionInfo;
-import org.chromium.ui.text.NoUnderlineClickableSpan;
+import org.chromium.chrome.browser.preferences.PrefServiceBridge;
 import org.chromium.ui.text.SpanApplier;
 import org.chromium.ui.text.SpanApplier.SpanInfo;
 
@@ -53,23 +53,18 @@ public class ToSAndUMAFirstRunFragment extends FirstRunPage {
             }
         });
 
-        if (ChromeVersionInfo.isOfficialBuild()) {
-            int paddingStart = getResources().getDimensionPixelSize(
-                    R.dimen.fre_tos_checkbox_padding);
-            ApiCompatibilityUtils.setPaddingRelative(mSendReportCheckBox,
-                    ApiCompatibilityUtils.getPaddingStart(mSendReportCheckBox) + paddingStart,
-                    mSendReportCheckBox.getPaddingTop(),
-                    ApiCompatibilityUtils.getPaddingEnd(mSendReportCheckBox),
-                    mSendReportCheckBox.getPaddingBottom());
+        int paddingStart = getResources().getDimensionPixelSize(R.dimen.fre_tos_checkbox_padding);
+        ApiCompatibilityUtils.setPaddingRelative(mSendReportCheckBox,
+                ApiCompatibilityUtils.getPaddingStart(mSendReportCheckBox) + paddingStart,
+                mSendReportCheckBox.getPaddingTop(),
+                ApiCompatibilityUtils.getPaddingEnd(mSendReportCheckBox),
+                mSendReportCheckBox.getPaddingBottom());
 
-            mSendReportCheckBox.setChecked(FirstRunActivity.DEFAULT_METRICS_AND_CRASH_REPORTING);
-        } else {
-            mSendReportCheckBox.setVisibility(View.GONE);
-        }
+        mSendReportCheckBox.setChecked(!getPageDelegate().isNeverUploadCrashDump());
 
         mTosAndPrivacy.setMovementMethod(LinkMovementMethod.getInstance());
 
-        NoUnderlineClickableSpan clickableTermsSpan = new NoUnderlineClickableSpan() {
+        ClickableSpan clickableTermsSpan = new ClickableSpan() {
             @Override
             public void onClick(View widget) {
                 if (!isAdded()) return;
@@ -78,7 +73,7 @@ public class ToSAndUMAFirstRunFragment extends FirstRunPage {
             }
         };
 
-        NoUnderlineClickableSpan clickablePrivacySpan = new NoUnderlineClickableSpan() {
+        ClickableSpan clickablePrivacySpan = new ClickableSpan() {
             @Override
             public void onClick(View widget) {
                 if (!isAdded()) return;
@@ -92,18 +87,7 @@ public class ToSAndUMAFirstRunFragment extends FirstRunPage {
     }
 
     @Override
-    public void setUserVisibleHint(boolean isVisibleToUser) {
-        super.setUserVisibleHint(isVisibleToUser);
-        if (isVisibleToUser && mSendReportCheckBox != null) {
-            // On certain versions of Android, the checkbox will appear unchecked upon revisiting
-            // the page.  Force it to the end state of the drawable animation as a work around.
-            // crbug.com/666258
-            mSendReportCheckBox.jumpDrawablesToCurrentState();
-        }
-    }
-
-    @Override
     public boolean shouldSkipPageOnCreate(Context appContext) {
-        return FirstRunStatus.shouldSkipWelcomePage();
+        return PrefServiceBridge.getInstance().isFirstRunEulaAccepted();
     }
 }

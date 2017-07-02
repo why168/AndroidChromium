@@ -10,7 +10,6 @@ import android.preference.Preference.OnPreferenceChangeListener;
 import android.preference.PreferenceFragment;
 
 import org.chromium.chrome.R;
-import org.chromium.chrome.browser.metrics.UmaSessionStats;
 import org.chromium.chrome.browser.preferences.ChromeSwitchPreference;
 import org.chromium.chrome.browser.preferences.ManagedPreferenceDelegate;
 import org.chromium.chrome.browser.preferences.PrefServiceBridge;
@@ -34,14 +33,24 @@ public class UsageAndCrashReportsPreferenceFragment extends PreferenceFragment {
     private void initUsageAndCrashReportsSwitch() {
         ChromeSwitchPreference usageAndCrashReportsSwitch =
                 (ChromeSwitchPreference) findPreference(PREF_USAGE_AND_CRASH_REPORTS_SWITCH);
-        boolean enabled =
-                PrivacyPreferencesManager.getInstance().isUsageAndCrashReportingPermittedByUser();
+        boolean enabled = PrivacyPreferencesManager.getInstance(getActivity())
+                                  .isUsageAndCrashReportingEnabled();
         usageAndCrashReportsSwitch.setChecked(enabled);
 
         usageAndCrashReportsSwitch.setOnPreferenceChangeListener(new OnPreferenceChangeListener() {
             @Override
             public boolean onPreferenceChange(Preference preference, Object newValue) {
-                UmaSessionStats.changeMetricsReportingConsent((boolean) newValue);
+                boolean enabled = (boolean) newValue;
+                PrivacyPreferencesManager privacyManager =
+                        PrivacyPreferencesManager.getInstance(getActivity());
+
+                // Update new two-choice android and chromium preferences.
+                PrefServiceBridge.getInstance().setMetricsReportingEnabled(enabled);
+                privacyManager.setUsageAndCrashReporting(enabled);
+
+                // Update old three-choice android and chromium preference.
+                PrefServiceBridge.getInstance().setCrashReporting(enabled);
+                privacyManager.initCrashUploadPreference(enabled);
                 return true;
             }
         });
@@ -49,7 +58,7 @@ public class UsageAndCrashReportsPreferenceFragment extends PreferenceFragment {
         usageAndCrashReportsSwitch.setManagedPreferenceDelegate(new ManagedPreferenceDelegate() {
             @Override
             public boolean isPreferenceControlledByPolicy(Preference preference) {
-                return PrefServiceBridge.getInstance().isMetricsReportingManaged();
+                return PrefServiceBridge.getInstance().isCrashReportManaged();
             }
         });
     }

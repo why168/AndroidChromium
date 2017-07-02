@@ -4,6 +4,7 @@
 
 package org.chromium.chrome.browser.signin;
 
+import android.app.Activity;
 import android.content.Context;
 
 import com.google.android.gms.auth.GoogleAuthException;
@@ -16,6 +17,8 @@ import org.chromium.chrome.browser.externalauth.ExternalAuthUtils;
 import org.chromium.chrome.browser.externalauth.UserRecoverableErrorHandler;
 
 import java.io.IOException;
+
+import javax.annotation.Nullable;
 
 /**
  * Returns a stable id that can be used to identify a Google Account.  This
@@ -52,10 +55,15 @@ public class AccountIdProvider {
      * Returns whether the AccountIdProvider can be used.
      * Since the AccountIdProvider queries Google Play services, this basically checks whether
      * Google Play services is available.
+     *
+     * @param activity If an activity is provided, it will be used to show a Modal Dialog notifying
+     * the user to update Google Play services, else a System notification is shown.
      */
-    public boolean canBeUsed(Context ctx) {
-        return ExternalAuthUtils.getInstance().canUseGooglePlayServices(
-                ctx, new UserRecoverableErrorHandler.Silent());
+    public boolean canBeUsed(Context ctx, @Nullable Activity activity) {
+        UserRecoverableErrorHandler errorHandler = activity != null
+                ? new UserRecoverableErrorHandler.ModalDialog(activity)
+                : new UserRecoverableErrorHandler.SystemNotification();
+        return ExternalAuthUtils.getInstance().canUseGooglePlayServices(ctx, errorHandler);
     }
 
     /**

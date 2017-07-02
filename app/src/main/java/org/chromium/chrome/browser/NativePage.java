@@ -41,11 +41,6 @@ public interface NativePage {
     int getThemeColor();
 
     /**
-     * @return True if the native page needs the toolbar shadow to be drawn.
-     */
-    boolean needsToolbarShadow();
-
-    /**
      * Updates the native page based on the given url.
      */
     void updateForUrl(String url);

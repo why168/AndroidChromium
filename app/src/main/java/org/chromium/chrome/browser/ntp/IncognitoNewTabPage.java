@@ -6,7 +6,6 @@ package org.chromium.chrome.browser.ntp;
 
 import android.app.Activity;
 import android.graphics.Canvas;
-import android.support.v4.view.ViewCompat;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.TextView;
@@ -19,6 +18,7 @@ import org.chromium.chrome.browser.UrlConstants;
 import org.chromium.chrome.browser.compositor.layouts.content.InvalidationAwareThumbnailProvider;
 import org.chromium.chrome.browser.help.HelpAndFeedback;
 import org.chromium.chrome.browser.ntp.IncognitoNewTabPageView.IncognitoNewTabPageManager;
+import org.chromium.chrome.browser.offlinepages.OfflinePageBridge;
 import org.chromium.chrome.browser.profiles.Profile;
 
 /**
@@ -67,10 +67,12 @@ public class IncognitoNewTabPage implements NativePage, InvalidationAwareThumbna
                 (IncognitoNewTabPageView) inflater.inflate(R.layout.new_tab_page_incognito, null);
         mIncognitoNewTabPageView.initialize(mIncognitoNewTabPageManager);
 
-        TextView newTabIncognitoMessage = (TextView) mIncognitoNewTabPageView.findViewById(
-                R.id.new_tab_incognito_message);
-        newTabIncognitoMessage.setText(
-                activity.getResources().getString(R.string.new_tab_incognito_message));
+        if (OfflinePageBridge.isEnabled()) {
+            TextView newTabIncognitoMessage = (TextView) mIncognitoNewTabPageView.findViewById(
+                    R.id.new_tab_incognito_message);
+            newTabIncognitoMessage.setText(activity.getResources().getString(
+                    R.string.offline_pages_new_tab_incognito_message));
+        }
     }
 
     /**
@@ -85,8 +87,7 @@ public class IncognitoNewTabPage implements NativePage, InvalidationAwareThumbna
 
     @Override
     public void destroy() {
-        assert !ViewCompat
-                .isAttachedToWindow(getView()) : "Destroy called before removed from window";
+        assert getView().getParent() == null : "Destroy called before removed from window";
     }
 
     @Override
@@ -107,11 +108,6 @@ public class IncognitoNewTabPage implements NativePage, InvalidationAwareThumbna
     @Override
     public int getThemeColor() {
         return mThemeColor;
-    }
-
-    @Override
-    public boolean needsToolbarShadow() {
-        return true;
     }
 
     @Override

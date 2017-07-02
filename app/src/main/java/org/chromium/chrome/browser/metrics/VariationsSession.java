@@ -6,8 +6,6 @@ package org.chromium.chrome.browser.metrics;
 
 import android.content.Context;
 
-import org.chromium.base.Callback;
-
 /**
  * Sets up communication with the VariationsService. This is primarily used for
  * triggering seed fetches on application startup.
@@ -24,27 +22,17 @@ public class VariationsSession {
             mInitialized = true;
             // Check the restrict mode only once initially to avoid doing extra work each time the
             // app enters foreground.
-            getRestrictMode(context, new Callback<String>() {
-                @Override
-                public void onResult(String restrictMode) {
-                    assert restrictMode != null;
-                    mRestrictMode = restrictMode;
-                    nativeStartVariationsSession(mRestrictMode);
-                }
-            });
-        // If |mRestrictMode| is null, async initialization is in progress and
-        // nativeStartVariationsSession will be called when it completes.
-        } else if (mRestrictMode != null) {
-            nativeStartVariationsSession(mRestrictMode);
+            mRestrictMode = getRestrictMode(context);
         }
+        nativeStartVariationsSession(mRestrictMode);
     }
 
     /**
-     * Asynchronously returns the value of the "restrict" URL param that the variations service
-     * should use for variation seed requests.
+     * Returns the value of the "restrict" URL param that the variations service should use for
+     * variation seed requests.
      */
-    protected void getRestrictMode(Context context, Callback<String> callback) {
-        callback.onResult("");
+    protected String getRestrictMode(Context context) {
+        return "";
     }
 
     private native void nativeStartVariationsSession(String restrictMode);

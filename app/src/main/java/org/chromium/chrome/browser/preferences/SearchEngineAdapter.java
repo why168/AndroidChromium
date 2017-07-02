@@ -10,6 +10,7 @@ import android.content.SharedPreferences;
 import android.content.res.Resources;
 import android.os.Build;
 import android.os.Bundle;
+import android.preference.PreferenceManager;
 import android.text.SpannableString;
 import android.text.style.ForegroundColorSpan;
 import android.view.LayoutInflater;
@@ -24,7 +25,6 @@ import android.widget.RadioButton;
 import android.widget.TextView;
 
 import org.chromium.base.ApiCompatibilityUtils;
-import org.chromium.base.ContextUtils;
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.omnibox.geo.GeolocationHeader;
 import org.chromium.chrome.browser.preferences.website.ContentSetting;
@@ -34,7 +34,6 @@ import org.chromium.chrome.browser.preferences.website.WebsitePreferenceBridge;
 import org.chromium.chrome.browser.search_engines.TemplateUrlService;
 import org.chromium.chrome.browser.search_engines.TemplateUrlService.LoadListener;
 import org.chromium.chrome.browser.search_engines.TemplateUrlService.TemplateUrl;
-import org.chromium.components.location.LocationUtils;
 import org.chromium.ui.text.SpanApplier;
 import org.chromium.ui.text.SpanApplier.SpanInfo;
 
@@ -53,7 +52,12 @@ public class SearchEngineAdapter extends BaseAdapter implements LoadListener, On
          * one.
          * @param name Provides the name of it (with a simplified URL in parenthesis).
          */
-        void currentSearchEngineDetermined(int selectedIndex);
+        void currentSearchEngineDetermined(String name);
+
+        /**
+         * Called when the dialog should be dismissed.
+         */
+        void onDismissDialog();
     }
 
     // The current context.
@@ -71,9 +75,6 @@ public class SearchEngineAdapter extends BaseAdapter implements LoadListener, On
     // if current search engine is managed and set to something other than the pre-populated values.
     private int mSelectedSearchEnginePosition = -1;
 
-    // The position of the default search engine before user's action.
-    private int mInitialEnginePosition = -1;
-
     /**
      * Construct a SearchEngineAdapter.
      * @param context The current context.
@@ -86,13 +87,6 @@ public class SearchEngineAdapter extends BaseAdapter implements LoadListener, On
         mCallback = callback;
 
         initEntries();
-    }
-
-    /**
-     * @return The index of the selected engine before user's action.
-     */
-    public int getInitialSearchEnginePosition() {
-        return mInitialEnginePosition;
     }
 
     // Used for testing.
@@ -126,27 +120,43 @@ public class SearchEngineAdapter extends BaseAdapter implements LoadListener, On
                 mSelectedSearchEnginePosition = i;
             }
         }
-        mInitialEnginePosition = mSelectedSearchEnginePosition;
 
         // Report back what is selected.
-        mCallback.currentSearchEngineDetermined(toIndex(mSelectedSearchEnginePosition));
+        String name = "";
+        if (mSelectedSearchEnginePosition > -1) {
+            TemplateUrl templateUrl = mSearchEngines.get(mSelectedSearchEnginePosition);
+            name = getSearchEngineNameAndDomain(mContext.getResources(), templateUrl);
+        }
+        mCallback.currentSearchEngineDetermined(name);
     }
 
     private int toIndex(int position) {
         return mSearchEngines.get(position).getIndex();
     }
 
+    /**
+     * @return The name of the search engine followed by the domain, e.g. "Google (google.co.uk)".
+     */
+    private static String getSearchEngineNameAndDomain(Resources res, TemplateUrl searchEngine) {
+        String title = searchEngine.getShortName();
+        if (!searchEngine.getKeyword().isEmpty()) {
+            title = res.getString(R.string.search_engine_name_and_domain, title,
+                    searchEngine.getKeyword());
+        }
+        return title;
+    }
+
     // BaseAdapter:
 
     @Override
     public int getCount() {
-        return mSearchEngines == null ? 0 : mSearchEngines.size();
+        return mSearchEngines.size();
     }
 
     @Override
     public Object getItem(int pos) {
         TemplateUrl templateUrl = mSearchEngines.get(pos);
-        return templateUrl.getShortName();
+        return getSearchEngineNameAndDomain(mContext.getResources(), templateUrl);
     }
 
     @Override
@@ -181,7 +191,7 @@ public class SearchEngineAdapter extends BaseAdapter implements LoadListener, On
         TextView description = (TextView) view.findViewById(R.id.description);
         TemplateUrl templateUrl = mSearchEngines.get(position);
         Resources resources = mContext.getResources();
-        description.setText(templateUrl.getShortName());
+        description.setText(getSearchEngineNameAndDomain(resources, templateUrl));
 
         // To improve the explore-by-touch experience, the radio button is hidden from accessibility
         // and instead, "checked" or "not checked" is read along with the search engine's name, e.g.
@@ -207,7 +217,7 @@ public class SearchEngineAdapter extends BaseAdapter implements LoadListener, On
         if (selected) {
             ForegroundColorSpan linkSpan = new ForegroundColorSpan(
                     ApiCompatibilityUtils.getColor(resources, R.color.pref_accent_color));
-            if (LocationUtils.getInstance().isSystemLocationSettingEnabled()) {
+            if (LocationSettings.getInstance().isSystemLocationSettingEnabled()) {
                 String message = mContext.getString(
                         locationEnabled(position, true)
                         ? R.string.search_engine_location_allowed
@@ -233,7 +243,6 @@ public class SearchEngineAdapter extends BaseAdapter implements LoadListener, On
     public void onTemplateUrlServiceLoaded() {
         TemplateUrlService.getInstance().unregisterLoadListener(this);
         initEntries();
-        notifyDataSetChanged();
     }
 
     // OnClickListener:
@@ -251,7 +260,7 @@ public class SearchEngineAdapter extends BaseAdapter implements LoadListener, On
         // First clean up any automatically added permissions (if any) for the previously selected
         // search engine.
         SharedPreferences sharedPreferences =
-                ContextUtils.getAppSharedPreferences();
+                PreferenceManager.getDefaultSharedPreferences(mContext);
         if (sharedPreferences.getBoolean(PrefServiceBridge.LOCATION_AUTO_ALLOWED, false)) {
             if (locationEnabled(mSelectedSearchEnginePosition, false)) {
                 String url = TemplateUrlService.getInstance().getSearchEngineUrlFromTemplateUrl(
@@ -264,16 +273,20 @@ public class SearchEngineAdapter extends BaseAdapter implements LoadListener, On
 
         // Record the change in search engine.
         mSelectedSearchEnginePosition = position;
+        TemplateUrlService.getInstance().setSearchEngine(toIndex(mSelectedSearchEnginePosition));
 
         // Report the change back.
-        mCallback.currentSearchEngineDetermined(toIndex(mSelectedSearchEnginePosition));
+        TemplateUrl templateUrl = mSearchEngines.get(mSelectedSearchEnginePosition);
+        mCallback.currentSearchEngineDetermined(getSearchEngineNameAndDomain(
+                mContext.getResources(), templateUrl));
 
         notifyDataSetChanged();
     }
 
     private void onLocationLinkClicked() {
-        if (!LocationUtils.getInstance().isSystemLocationSettingEnabled()) {
-            mContext.startActivity(LocationUtils.getInstance().getSystemLocationSettingsIntent());
+        if (!LocationSettings.getInstance().isSystemLocationSettingEnabled()) {
+            mContext.startActivity(
+                    LocationSettings.getInstance().getSystemLocationSettingsIntent());
         } else {
             Intent settingsIntent = PreferencesLauncher.createIntentForSettingsPage(
                     mContext, SingleWebsitePreferences.class.getName());
@@ -285,6 +298,7 @@ public class SearchEngineAdapter extends BaseAdapter implements LoadListener, On
             settingsIntent.putExtra(Preferences.EXTRA_SHOW_FRAGMENT_ARGUMENTS, fragmentArgs);
             mContext.startActivity(settingsIntent);
         }
+        mCallback.onDismissDialog();
     }
 
     private boolean locationEnabled(int position, boolean checkGeoHeader) {

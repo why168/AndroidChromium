@@ -114,22 +114,10 @@ public class FaviconHelper {
         return nativeGetSyncedFaviconImageForURL(mNativeFaviconHelper, profile, pageUrl);
     }
 
-    /**
-     * Tries to make sure that the specified icon is available in the cache of the provided profile.
-     * @param profile       Profile used for the FaviconService construction.
-     * @param webContents   The object used to download the icon.
-     * @param pageUrl       The target Page URL to get the favicon for.
-     * @param iconUrl       The URL of the icon to retrieve.
-     * @param isLargeIcon   Specifies whether the type is TOUCH_ICON (true) or FAVICON (false).
-     * @param isTemporary   Specifies whether the icon at iconUrl is temporary and should be updated
-     *                      as soon as the page at pageUrl is revisited.
-     * @param callback      Called when completed (download not needed, finished or failed).
-     */
     public void ensureIconIsAvailable(Profile profile, WebContents webContents, String pageUrl,
-            String iconUrl, boolean isLargeIcon, boolean isTemporary,
-            IconAvailabilityCallback callback) {
+            String iconUrl, boolean isLargeIcon, IconAvailabilityCallback callback) {
         nativeEnsureIconIsAvailable(mNativeFaviconHelper, profile, webContents, pageUrl, iconUrl,
-                isLargeIcon, isTemporary, callback);
+                isLargeIcon, callback);
     }
 
     private static native long nativeInit();
@@ -142,5 +130,5 @@ public class FaviconHelper {
     private static native int nativeGetDominantColorForBitmap(Bitmap image);
     private static native void nativeEnsureIconIsAvailable(long nativeFaviconHelper,
             Profile profile, WebContents webContents, String pageUrl, String iconUrl,
-            boolean isLargeIcon, boolean isTemporary, IconAvailabilityCallback callback);
+            boolean isLargeIcon, IconAvailabilityCallback callback);
 }

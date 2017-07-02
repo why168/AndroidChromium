@@ -69,11 +69,6 @@ public class FrozenNativePage implements NativePage {
     }
 
     @Override
-    public boolean needsToolbarShadow() {
-        return true;
-    }
-
-    @Override
     public void updateForUrl(String url) {
     }
 

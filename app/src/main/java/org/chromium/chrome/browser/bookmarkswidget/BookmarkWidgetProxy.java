@@ -21,9 +21,9 @@ public class BookmarkWidgetProxy extends BroadcastReceiver {
 
     @Override
     public void onReceive(Context context, Intent intent) {
-        if (BookmarkWidgetService.getChangeFolderAction(context)
+        if (BookmarkThumbnailWidgetService.getChangeFolderAction(context)
                 .equals(intent.getAction())) {
-            BookmarkWidgetService.changeFolder(context, intent);
+            BookmarkThumbnailWidgetService.changeFolder(context, intent);
         } else {
             Intent view = new Intent(intent);
             view.setClass(context, ChromeLauncherActivity.class);

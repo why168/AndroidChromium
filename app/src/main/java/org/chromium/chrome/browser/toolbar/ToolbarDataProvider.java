@@ -27,9 +27,19 @@ public interface ToolbarDataProvider {
     boolean isIncognito();
 
     /**
+     * @return The chip text from the search URL.
+     */
+    String getCorpusChipText();
+
+    /**
      * @return The formatted text (URL or search terms) for display.
      */
     String getText();
+
+    /**
+     * @return Whether the text to display is a search query replacing the URL.
+     */
+    boolean wouldReplaceURL();
 
     /**
      * @return The primary color to use for the background drawable.

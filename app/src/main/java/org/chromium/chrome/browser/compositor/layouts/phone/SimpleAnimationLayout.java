@@ -404,9 +404,6 @@ public class SimpleAnimationLayout
     }
 
     @Override
-    public void onPropertyAnimationFinished(Property prop) {}
-
-    @Override
     protected SceneLayer getSceneLayer() {
         return mSceneLayer;
     }
@@ -419,6 +416,6 @@ public class SimpleAnimationLayout
                 resourceManager, fullscreenManager);
         assert mSceneLayer != null;
         mSceneLayer.pushLayers(getContext(), viewport, contentViewport, this, layerTitleCache,
-                tabContentManager, resourceManager, fullscreenManager);
+                tabContentManager, resourceManager);
     }
 }

@@ -160,9 +160,6 @@ class ForeignSessionHelper {
      *         reason.
      */
     List<ForeignSession> getForeignSessions() {
-        if (!isTabSyncEnabled()) {
-            return null;
-        }
         List<ForeignSession> result = new ArrayList<ForeignSession>();
         boolean received = nativeGetForeignSessions(mNativeForeignSessionHelper, result);
         if (!received) {

@@ -7,14 +7,11 @@ package org.chromium.chrome.browser.firstrun;
 import android.accounts.Account;
 import android.content.Context;
 
-import org.chromium.base.Callback;
-import org.chromium.base.Log;
 import org.chromium.chrome.browser.services.AndroidEduAndChildAccountHelper;
-import org.chromium.chrome.browser.signin.AccountManagementFragment;
 import org.chromium.chrome.browser.signin.SigninManager;
 import org.chromium.chrome.browser.util.FeatureUtilities;
-import org.chromium.components.signin.AccountManagerHelper;
-import org.chromium.components.signin.ChromeSigninController;
+import org.chromium.sync.signin.AccountManagerHelper;
+import org.chromium.sync.signin.ChromeSigninController;
 
 /**
  * A helper to perform all necessary steps for forced sign in.
@@ -29,8 +26,6 @@ import org.chromium.components.signin.ChromeSigninController;
  * ForcedSigninProcessor.start(appContext).
  */
 public final class ForcedSigninProcessor {
-    private static final String TAG = "ForcedSignin";
-
     /*
      * Only for static usage.
      */
@@ -52,7 +47,9 @@ public final class ForcedSigninProcessor {
                 if (!isAndroidEduDevice && !hasChildAccount) return;
                 // Child account and EDU device at the same time is not supported.
                 assert !(isAndroidEduDevice && hasChildAccount);
-                processForcedSignIn(appContext);
+                int signinType = hasChildAccount ? SigninManager.SIGNIN_TYPE_FORCED_CHILD_ACCOUNT
+                                                 : SigninManager.SIGNIN_TYPE_FORCED_EDU;
+                processAutomaticSignIn(appContext, signinType);
             }
         }.start(appContext);
     }
@@ -61,33 +58,14 @@ public final class ForcedSigninProcessor {
      * Processes the fully automatic non-FRE-related forced sign-in.
      * This is used to enforce the environment for Android EDU and child accounts.
      */
-    private static void processForcedSignIn(final Context appContext) {
-        final SigninManager signinManager = SigninManager.get(appContext);
-        // By definition we have finished all the checks for first run.
-        signinManager.onFirstRunCheckDone();
-        if (!FeatureUtilities.canAllowSync(appContext) || !signinManager.isSignInAllowed()) {
-            Log.d(TAG, "Sign in disallowed");
+    private static void processAutomaticSignIn(Context appContext, int signinType) {
+        final Account[] googleAccounts = AccountManagerHelper.get(appContext).getGoogleAccounts();
+        SigninManager signinManager = SigninManager.get(appContext);
+        if (!FeatureUtilities.canAllowSync(appContext) || !signinManager.isSignInAllowed()
+                || googleAccounts.length != 1) {
             return;
         }
-        AccountManagerHelper.get(appContext).getGoogleAccounts(new Callback<Account[]>() {
-            @Override
-            public void onResult(Account[] accounts) {
-                if (accounts.length != 1) {
-                    Log.d(TAG, "Incorrect number of accounts (%d)", accounts.length);
-                    return;
-                }
-                signinManager.signIn(accounts[0], null, new SigninManager.SignInCallback() {
-                    @Override
-                    public void onSignInComplete() {
-                        // Since this is a forced signin, signout is not allowed.
-                        AccountManagementFragment.setSignOutAllowedPreferenceValue(
-                                appContext, false);
-                    }
-
-                    @Override
-                    public void onSignInAborted() {}
-                });
-            }
-        });
+        signinManager.signInToSelectedAccount(null, googleAccounts[0], signinType,
+                SigninManager.SIGNIN_SYNC_IMMEDIATELY, false, null);
     }
 }

@@ -25,44 +25,38 @@ public class AutofillProfileBridge {
 
     /**
      * Address field types.
-     * This list must be kept in-sync with the corresponding enum in
-     * third_party/libaddressinput/src/cpp/include/libaddressinput/address_field.h
+     * This list must be kept in-sync with the corresponding enum in auotfill_profile_bridge.cc.
      */
-    public static class AddressField {
-        public static final int COUNTRY = 0;
-        public static final int ADMIN_AREA = 1;
-        public static final int LOCALITY = 2;
-        public static final int DEPENDENT_LOCALITY = 3;
-        public static final int SORTING_CODE = 4;
-        public static final int POSTAL_CODE = 5;
-        public static final int STREET_ADDRESS = 6;
-        public static final int ORGANIZATION = 7;
-        public static final int RECIPIENT = 8;
+    static class AddressField {
+        static final int COUNTRY = 0;
+        static final int ADMIN_AREA = 1;
+        static final int LOCALITY = 2;
+        static final int DEPENDENT_LOCALITY = 3;
+        static final int SORTING_CODE = 4;
+        static final int POSTAL_CODE = 5;
+        static final int STREET_ADDRESS = 6;
+        static final int ORGANIZATION = 7;
+        static final int RECIPIENT = 8;
 
-        public static final int NUM_FIELDS = 9;
+        static final int NUM_FIELDS = 9;
     }
 
     /**
-     * A convenience class for displaying keyed values in a dropdown.
+     * A convenience class for storing a CLDR country code and its corresponding
+     * localized display name.
      */
-    public static class DropdownKeyValue extends Pair<String, String> {
-        public DropdownKeyValue(String key, String value) {
-            super(key, value);
-        }
+    static class Country {
+        String mName;
+        String mCode;
 
-        /** @return The key identifier. */
-        public String getKey() {
-            return super.first;
-        }
-
-        /** @return The human-readable localized display value. */
-        public String getValue() {
-            return super.second;
+        Country(String name, String code) {
+            mName = name;
+            mCode = code;
         }
 
         @Override
         public String toString() {
-            return super.second;
+            return mName;
         }
     }
 
@@ -75,69 +69,33 @@ public class AutofillProfileBridge {
         return nativeGetDefaultCountryCode();
     }
 
-    /** @return The list of supported countries sorted by their localized display names. */
-    public static List<DropdownKeyValue> getSupportedCountries() {
-        List<String> countryCodes = new ArrayList<>();
-        List<String> countryNames = new ArrayList<>();
-        List<DropdownKeyValue> countries = new ArrayList<>();
+    /**
+     * @return The list of supported countries sorted by their localized display
+     *         names.
+     */
+    static List<Country> getSupportedCountries() {
+        List<String> countryCodes = new ArrayList<String>();
+        List<String> countryNames = new ArrayList<String>();
+        List<Country> countries = new ArrayList<Country>();
 
         nativeGetSupportedCountries(countryCodes, countryNames);
 
         for (int i = 0; i < countryCodes.size(); i++) {
-            countries.add(new DropdownKeyValue(countryCodes.get(i), countryNames.get(i)));
+            countries.add(new Country(countryNames.get(i), countryCodes.get(i)));
         }
 
         final Collator collator = Collator.getInstance(Locale.getDefault());
         collator.setStrength(Collator.PRIMARY);
-        Collections.sort(countries, new Comparator<DropdownKeyValue>() {
+        Collections.sort(countries, new Comparator<Country>() {
             @Override
-            public int compare(DropdownKeyValue lhs, DropdownKeyValue rhs) {
-                int result = collator.compare(lhs.getValue(), rhs.getValue());
-                if (result == 0) result = lhs.getKey().compareTo(rhs.getKey());
+            public int compare(Country lhs, Country rhs) {
+                int result = collator.compare(lhs.mName, rhs.mName);
+                if (result == 0) result = lhs.mCode.compareTo(rhs.mCode);
                 return result;
             }
         });
 
         return countries;
-    }
-
-    /** @return The list of required fields. COUNTRY is always included. RECIPIENT often omitted. */
-    public static List<Integer> getRequiredAddressFields(String countryCode) {
-        List<Integer> requiredFields = new ArrayList<>();
-        nativeGetRequiredFields(countryCode, requiredFields);
-        return requiredFields;
-    }
-
-    /**
-     * Description of an address editor input field.
-     */
-    public static class AddressUiComponent {
-        /** The type of the field, e.g., AddressField.LOCALITY. */
-        public final int id;
-
-        /** The localized display label for the field, e.g., "City." */
-        public final String label;
-
-        /** Whether the field is required. */
-        public final boolean isRequired;
-
-        /** Whether the field takes up the full line.*/
-        public final boolean isFullLine;
-
-        /**
-         * Builds a description of an address editor input field.
-         *
-         * @param id         The type of the field, .e.g., AddressField.LOCALITY.
-         * @param label      The localized display label for the field, .e.g., "City."
-         * @param isRequired Whether the field is required.
-         * @param isFullLine Whether the field takes up the full line.
-         */
-        public AddressUiComponent(int id, String label, boolean isRequired, boolean isFullLine) {
-            this.id = id;
-            this.label = label;
-            this.isRequired = isRequired;
-            this.isFullLine = isFullLine;
-        }
     }
 
     /**
@@ -150,23 +108,24 @@ public class AutofillProfileBridge {
      * @param languageCode The language code associated with the saved autofill profile that ui
      *                     components are being retrieved for; can be null if ui components are
      *                     being retrieved for a new profile.
-     * @return A list of address UI components. The ordering in the list specifies the order these
-     *         components should appear in the UI.
+     * @return A list containing pairs where the first element in the pair is an Integer
+     *         representing the component id (one of the constants in AddressField), and the second
+     *         element in the pair is the localized component name (intended for use as labels in
+     *         the UI). The ordering in the list of pairs specifies the order these components
+     *         should appear in the UI.
      */
-    public List<AddressUiComponent> getAddressUiComponents(
-            String countryCode, String languageCode) {
-        List<Integer> componentIds = new ArrayList<>();
-        List<String> componentNames = new ArrayList<>();
-        List<Integer> componentRequired = new ArrayList<>();
-        List<Integer> componentLengths = new ArrayList<>();
-        List<AddressUiComponent> uiComponents = new ArrayList<>();
+    List<Pair<Integer, String>> getAddressUiComponents(String countryCode,
+            String languageCode) {
+        List<Integer> componentIds = new ArrayList<Integer>();
+        List<String> componentNames = new ArrayList<String>();
+        List<Pair<Integer, String>> uiComponents = new ArrayList<Pair<Integer, String>>();
 
-        mCurrentBestLanguageCode = nativeGetAddressUiComponents(countryCode, languageCode,
-                componentIds, componentNames, componentRequired, componentLengths);
+        mCurrentBestLanguageCode =
+                nativeGetAddressUiComponents(countryCode, languageCode, componentIds,
+                        componentNames);
 
         for (int i = 0; i < componentIds.size(); i++) {
-            uiComponents.add(new AddressUiComponent(componentIds.get(i), componentNames.get(i),
-                    componentRequired.get(i) == 1, componentLengths.get(i) == 1));
+            uiComponents.add(new Pair<Integer, String>(componentIds.get(i), componentNames.get(i)));
         }
 
         return uiComponents;
@@ -176,7 +135,7 @@ public class AutofillProfileBridge {
      * @return The language code associated with the most recently retrieved address ui components.
      *         Will return null if getAddressUiComponents() has not been called yet.
      */
-    public String getCurrentBestLanguageCode() {
+    String getCurrentBestLanguageCode() {
         return mCurrentBestLanguageCode;
     }
 
@@ -197,9 +156,6 @@ public class AutofillProfileBridge {
     private static native String nativeGetDefaultCountryCode();
     private static native void nativeGetSupportedCountries(List<String> countryCodes,
             List<String> countryNames);
-    private static native void nativeGetRequiredFields(
-            String countryCode, List<Integer> requiredFields);
     private static native String nativeGetAddressUiComponents(String countryCode,
-            String languageCode, List<Integer> componentIds, List<String> componentNames,
-            List<Integer> componentRequired, List<Integer> componentLengths);
+            String languageCode, List<Integer> componentIds, List<String> componentNames);
 }

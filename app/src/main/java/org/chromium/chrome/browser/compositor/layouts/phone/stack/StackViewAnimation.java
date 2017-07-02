@@ -4,9 +4,8 @@
 
 package org.chromium.chrome.browser.compositor.layouts.phone.stack;
 
-import android.animation.Animator;
+import android.animation.AnimatorSet;
 import android.animation.ObjectAnimator;
-import android.animation.PropertyValuesHolder;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewGroup.LayoutParams;
@@ -30,7 +29,7 @@ public class StackViewAnimation {
 
     /**
      * Constructor.
-     * NOTE: Pass in height and heightMinusBrowserControls if they're ever needed.
+     * NOTE: Pass in height and heightMinusTopControls if they're ever needed.
      *
      * @param dpToPx                   The density of the device.
      * @param widthDp                  The width of the layout in dp.
@@ -49,26 +48,26 @@ public class StackViewAnimation {
      * @param container  The {@link ViewGroup} that {@link View}s can be added to/removed from.
      * @param model      The {@link TabModel} that this animation will influence.
      * @param focusIndex The index of the tab that is the focus of this animation.
-     * @return           The resulting {@link Animator} that will animate the Android views.
+     * @return           The resulting {@link AnimatorSet} that will animate the Android views.
      */
-    public Animator createAnimatorForType(OverviewAnimationType type, StackTab[] tabs,
+    public AnimatorSet createAnimatorSetForType(OverviewAnimationType type, StackTab[] tabs,
             ViewGroup container, TabModel model, int focusIndex) {
-        Animator animator = null;
+        AnimatorSet set = null;
 
         if (model != null) {
             switch (type) {
                 case NEW_TAB_OPENED:
-                    animator = createNewTabOpenedAnimator(tabs, container, model, focusIndex);
+                    set = createNewTabOpenedAnimatorSet(tabs, container, model, focusIndex);
                     break;
                 default:
                     break;
             }
         }
 
-        return animator;
+        return set;
     }
 
-    private Animator createNewTabOpenedAnimator(
+    private AnimatorSet createNewTabOpenedAnimatorSet(
             StackTab[] tabs, ViewGroup container, TabModel model, int focusIndex) {
         Tab tab = model.getTabAt(focusIndex);
         if (tab == null || !tab.isNativePage()) return null;
@@ -90,19 +89,20 @@ public class StackViewAnimation {
         }
 
         // Build the view animations
-        PropertyValuesHolder xScale = PropertyValuesHolder.ofFloat(View.SCALE_X, 0.f, 1.f);
-        PropertyValuesHolder yScale = PropertyValuesHolder.ofFloat(View.SCALE_Y, 0.f, 1.f);
-        PropertyValuesHolder alpha = PropertyValuesHolder.ofFloat(View.ALPHA, 0.f, 1.f);
-        ObjectAnimator animator = ObjectAnimator.ofPropertyValuesHolder(
-                bgView, xScale, yScale, alpha);
+        ObjectAnimator xScale = ObjectAnimator.ofFloat(bgView, View.SCALE_X, 0.f, 1.f);
+        ObjectAnimator yScale = ObjectAnimator.ofFloat(bgView, View.SCALE_Y, 0.f, 1.f);
+        ObjectAnimator alpha = ObjectAnimator.ofFloat(bgView, View.ALPHA, 0.f, 1.f);
 
-        animator.setDuration(TAB_OPENED_ANIMATION_DURATION);
-        animator.setInterpolator(BakedBezierInterpolator.TRANSFORM_FOLLOW_THROUGH_CURVE);
+        AnimatorSet set = new AnimatorSet();
+        set.playTogether(xScale, yScale, alpha);
+
+        set.setDuration(TAB_OPENED_ANIMATION_DURATION);
+        set.setInterpolator(BakedBezierInterpolator.TRANSFORM_FOLLOW_THROUGH_CURVE);
 
         float insetPx = TAB_OPENED_PIVOT_INSET_DP * mDpToPx;
 
         bgView.setPivotY(TAB_OPENED_PIVOT_INSET_DP);
         bgView.setPivotX(LocalizationUtils.isLayoutRtl() ? mWidthDp * mDpToPx - insetPx : insetPx);
-        return animator;
+        return set;
     }
 }

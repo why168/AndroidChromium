@@ -11,7 +11,6 @@ import android.app.Fragment;
  */
 public interface FirstRunPageDelegate {
     /**
-     * Must be called only after native has been initialized.
      * @return A {@link ProfileDataCache} for Android user accounts.
      */
     ProfileDataCache getProfileDataCache();
@@ -41,6 +40,11 @@ public interface FirstRunPageDelegate {
     void completeFirstRunExperience();
 
     /**
+     * Notifies that the sign-in dialog is shown.
+     */
+    void onSigninDialogShown();
+
+    /**
      * Notifies that the user refused to sign in (e.g. "NO, THANKS").
      */
     void refuseSignIn();
@@ -52,15 +56,20 @@ public interface FirstRunPageDelegate {
     void acceptSignIn(String accountName);
 
     /**
-     * Notifies that the user asked to show sign in Settings once the sign in
+     * Notifies that the user asked to show Sync Settings once the sign in
      * process is complete.
      */
-    void askToOpenSignInSettings();
+    void askToOpenSyncSettings();
 
     /**
      * @return Whether the user has accepted Chrome Terms of Service.
      */
     boolean didAcceptTermsOfService();
+
+    /**
+     * @return Whether the "upload crash dump" setting is set to "NEVER".
+     */
+    boolean isNeverUploadCrashDump();
 
     /**
      * Notifies all interested parties that the user has accepted Chrome Terms of Service.

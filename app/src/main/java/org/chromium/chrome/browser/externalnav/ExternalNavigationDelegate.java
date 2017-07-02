@@ -4,8 +4,8 @@
 
 package org.chromium.chrome.browser.externalnav;
 
+import android.content.ComponentName;
 import android.content.Intent;
-import android.content.pm.ResolveInfo;
 
 import org.chromium.chrome.browser.externalnav.ExternalNavigationHandler.OverrideUrlLoadingResult;
 import org.chromium.chrome.browser.tab.Tab;
@@ -18,10 +18,14 @@ import java.util.List;
  */
 interface ExternalNavigationDelegate {
     /**
-     * Get the list of component name of activities which can resolve |intent|.  If the request
-     * fails, null will be returned.
+     * Get the list of component name of activities which can resolve |intent|.
      */
-    List<ResolveInfo> queryIntentActivities(Intent intent);
+    List<ComponentName> queryIntentActivities(Intent intent);
+
+    /**
+     * Determine if the given intent can be resolved to at least one activity.
+     */
+    boolean canResolveActivity(Intent intent);
 
     /**
      * Determine if Chrome is the default or only handler for a given intent. If true, Chrome
@@ -33,26 +37,7 @@ interface ExternalNavigationDelegate {
      * Search for intent handlers that are specific to this URL aka, specialized apps like
      * google maps or youtube
      */
-    boolean isSpecializedHandlerAvailable(List<ResolveInfo> infos);
-
-    /**
-     * Returns true if the current activity is a webapp and {@params url} lies within the scope of
-     * that webapp.
-     */
-    boolean isWithinCurrentWebappScope(String url);
-
-    /**
-     * Returns the number of specialized intent handlers in {@params infos}. Specialized intent
-     * handlers are intent handlers which handle only a few URLs (e.g. google maps or youtube).
-     */
-    int countSpecializedHandlers(List<ResolveInfo> infos);
-
-    /**
-     * Returns the package name of the first valid WebAPK in {@link infos}.
-     * @param infos ResolveInfos to search.
-     * @return The package name of the first valid WebAPK. Null if no valid WebAPK was found.
-     */
-    String findWebApkPackageName(List<ResolveInfo> infos);
+    boolean isSpecializedHandlerAvailable(Intent intent);
 
     /**
      * Get the name of the package of the currently running activity so that incoming intents
@@ -62,43 +47,29 @@ interface ExternalNavigationDelegate {
 
     /**
      * Start an activity for the intent. Used for intents that must be handled externally.
-     * @param intent The intent we want to send.
-     * @param proxy Whether we need to proxy the intent through AuthenticatedProxyActivity (this is
-     *              used by Instant Apps intents).
      */
-    void startActivity(Intent intent, boolean proxy);
+    void startActivity(Intent intent);
 
     /**
      * Start an activity for the intent. Used for intents that may be handled internally or
      * externally. If the user chooses to handle the intent internally, this routine must return
      * false.
-     * @param intent The intent we want to send.
-     * @param proxy Whether we need to proxy the intent through AuthenticatedProxyActivity (this is
-     *              used by Instant Apps intents).
      */
-    boolean startActivityIfNeeded(Intent intent, boolean proxy);
+    boolean startActivityIfNeeded(Intent intent);
 
     /**
      * Display a dialog warning the user that they may be leaving Chrome by starting this
      * intent. Give the user the opportunity to cancel the action. And if it is canceled, a
      * navigation will happen in Chrome.
-     * @param intent The intent for external application that will be sent.
-     * @param referrerUrl The referrer for the current navigation.
-     * @param fallbackUrl The URL to load if the user doesn't proceed with external intent.
-     * @param tab The current tab.
-     * @param needsToCloseTab Whether the current tab has to be closed after the intent is sent.
-     * @param proxy Whether we need to proxy the intent through AuthenticatedProxyActivity (this is
-     *              used by Instant Apps intents.
      */
     void startIncognitoIntent(Intent intent, String referrerUrl, String fallbackUrl, Tab tab,
-            boolean needsToCloseTab, boolean proxy);
+            boolean needsToCloseTab);
 
     /**
-     * @param url The requested url.
      * @param tab The current tab.
      * @return Whether we should block the navigation and request file access before proceeding.
      */
-    boolean shouldRequestFileAccess(String url, Tab tab);
+    boolean shouldRequestFileAccess(Tab tab);
 
     /**
      * Trigger a UI affordance that will ask the user to grant file access.  After the access
@@ -123,43 +94,13 @@ interface ExternalNavigationDelegate {
      */
     OverrideUrlLoadingResult clobberCurrentTab(String url, String referrerUrl, Tab tab);
 
-    /** Adds a window id to the intent, if necessary. */
-    void maybeSetWindowId(Intent intent);
-
-    /** Adds the package name of a specialized intent handler. */
-    void maybeRecordAppHandlersInIntent(Intent intent, List<ResolveInfo> info);
-
     /**
      * Determine if the Chrome app is in the foreground.
      */
     boolean isChromeAppInForeground();
 
     /**
-     * @return Default SMS application's package name. Null if there isn't any.
+     * Check if Chrome is running in document mode.
      */
-    String getDefaultSmsPackageName();
-
-    /**
-     * @return Whether the URL is a file download.
-     */
-    boolean isPdfDownload(String url);
-
-    /**
-     * Check if the URL should be handled by an instant app, or kick off an async request for an
-     * instant app banner.
-     * @param tab The current tab.
-     * @param url The current URL.
-     * @param referrerUrl The referrer URL.
-     * @param isIncomingRedirect Whether we are handling an incoming redirect to an instant app.
-     * @return Whether we launched an instant app.
-     */
-    boolean maybeLaunchInstantApp(Tab tab, String url, String referrerUrl,
-            boolean isIncomingRedirect);
-
-    /**
-     * @param referrerUrl The referrer URL.
-     * @param tab The current tab.
-     * @return whether this navigation is from the search results page.
-     */
-    boolean isSerpReferrer(String referrerUrl, Tab tab);
+    boolean isDocumentMode();
 }

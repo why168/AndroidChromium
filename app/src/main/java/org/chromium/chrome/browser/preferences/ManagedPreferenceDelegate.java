@@ -6,8 +6,7 @@ package org.chromium.chrome.browser.preferences;
 
 import android.preference.Preference;
 import android.view.View;
-
-import org.chromium.chrome.browser.util.ViewUtils;
+import android.view.ViewGroup;
 
 /**
  * A delegate that determines whether a Preference is managed by enterprise policy. This is used
@@ -81,7 +80,7 @@ public abstract class ManagedPreferenceDelegate {
      */
     public void onBindViewToPreference(Preference preference, View view) {
         if (isPreferenceClickDisabledByPolicy(preference)) {
-            ViewUtils.setEnabledRecursive(view, false);
+            disableView(view);
         }
     }
 
@@ -101,5 +100,18 @@ public abstract class ManagedPreferenceDelegate {
         }
 
         return false;
+    }
+
+    /**
+     * Disables the given View and any subviews, recursively.
+     */
+    private static void disableView(View view) {
+        view.setEnabled(false);
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                disableView(group.getChildAt(i));
+            }
+        }
     }
 }

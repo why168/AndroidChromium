@@ -27,10 +27,10 @@ class StackAnimationPortrait extends StackAnimation {
     /**
      * Only Constructor.
      */
-    public StackAnimationPortrait(float width, float height, float heightMinusBrowserControls,
+    public StackAnimationPortrait(float width, float height, float heightMinusTopControls,
             float borderFramePaddingTop, float borderFramePaddingTopOpaque,
             float borderFramePaddingLeft) {
-        super(width, height, heightMinusBrowserControls, borderFramePaddingTop,
+        super(width, height, heightMinusTopControls, borderFramePaddingTop,
                 borderFramePaddingTopOpaque, borderFramePaddingLeft);
     }
 
@@ -62,11 +62,11 @@ class StackAnimationPortrait extends StackAnimation {
             float scrollOffset = StackTab.screenToScroll(i * spacing, warpSize);
 
             if (i < focusIndex) {
-                tab.getLayoutTab().setMaxContentHeight(mHeightMinusBrowserControls);
+                tab.getLayoutTab().setMaxContentHeight(mHeightMinusTopControls);
                 addAnimation(set, tab, SCROLL_OFFSET, initialScrollOffset, scrollOffset,
                         ENTER_STACK_ANIMATION_DURATION, 0);
             } else if (i > focusIndex) {
-                tab.getLayoutTab().setMaxContentHeight(mHeightMinusBrowserControls);
+                tab.getLayoutTab().setMaxContentHeight(mHeightMinusTopControls);
                 tab.setScrollOffset(scrollOffset + trailingScrollOffset);
                 addAnimation(
                         set, tab, Y_IN_STACK_OFFSET, mHeight, 0, ENTER_STACK_ANIMATION_DURATION, 0);
@@ -75,7 +75,7 @@ class StackAnimationPortrait extends StackAnimation {
 
                 addAnimation(set, tab.getLayoutTab(), MAX_CONTENT_HEIGHT,
                         tab.getLayoutTab().getUnclampedOriginalContentHeight(),
-                        mHeightMinusBrowserControls, ENTER_STACK_ANIMATION_DURATION,
+                        mHeightMinusTopControls, ENTER_STACK_ANIMATION_DURATION,
                         ENTER_STACK_RESIZE_DELAY);
                 addAnimation(set, tab, Y_IN_STACK_INFLUENCE, 0.0f, 1.0f,
                         ENTER_STACK_BORDER_ALPHA_DURATION, 0);
@@ -89,7 +89,7 @@ class StackAnimationPortrait extends StackAnimation {
                 addAnimation(set, tab.getLayoutTab(), SIDE_BORDER_SCALE, 0.f, 1.f,
                         ENTER_STACK_BORDER_ALPHA_DURATION, TAB_FOCUSED_TOOLBAR_ALPHA_DELAY);
 
-                tab.setYOutOfStack(mHeight - mHeightMinusBrowserControls - mBorderTopHeight);
+                tab.setYOutOfStack(mHeight - mHeightMinusTopControls - mBorderTopHeight);
             }
         }
 
@@ -142,7 +142,7 @@ class StackAnimationPortrait extends StackAnimation {
                         tab.getLayoutTab().getMaxContentHeight(),
                         tab.getLayoutTab().getUnclampedOriginalContentHeight(),
                         TAB_FOCUSED_ANIMATION_DURATION, 0);
-                tab.setYOutOfStack(mHeight - mHeightMinusBrowserControls - mBorderTopHeight);
+                tab.setYOutOfStack(mHeight - mHeightMinusTopControls - mBorderTopHeight);
                 if (layoutTab.shouldStall()) {
                     addAnimation(set, layoutTab, SATURATION, 1.0f, 0.0f,
                             TAB_FOCUSED_BORDER_ALPHA_DURATION, TAB_FOCUSED_BORDER_ALPHA_DELAY);

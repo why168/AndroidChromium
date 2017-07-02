@@ -4,9 +4,9 @@
 
 package org.chromium.chrome.browser.media.router.cast;
 
-import android.support.v7.media.MediaRouteSelector;
 import android.support.v7.media.MediaRouter;
 
+import org.chromium.chrome.browser.media.router.ChromeMediaRouter;
 import org.chromium.chrome.browser.media.router.DiscoveryDelegate;
 
 import java.util.ArrayList;
@@ -21,18 +21,16 @@ import java.util.Set;
  */
 public class DiscoveryCallback extends MediaRouter.Callback {
     private final DiscoveryDelegate mDiscoveryDelegate;
-    private final MediaRouteSelector mRouteSelector;
     private Set<String> mSourceUrns = new HashSet<String>();
     private List<MediaSink> mSinks = new ArrayList<MediaSink>();
 
     public DiscoveryCallback(String sourceUrn, List<MediaSink> knownSinks,
-            DiscoveryDelegate delegate, MediaRouteSelector selector) {
+            DiscoveryDelegate delegate) {
         assert delegate != null;
         assert sourceUrn != null && !sourceUrn.isEmpty();
 
         mSinks.addAll(knownSinks);
         mDiscoveryDelegate = delegate;
-        mRouteSelector = selector;
 
         addSourceUrn(sourceUrn);
     }
@@ -53,8 +51,6 @@ public class DiscoveryCallback extends MediaRouter.Callback {
 
     @Override
     public void onRouteAdded(MediaRouter router, MediaRouter.RouteInfo route) {
-        if (route == null || !route.matchesSelector(mRouteSelector)) return;
-
         MediaSink sink = MediaSink.fromRoute(route);
         if (mSinks.contains(sink)) return;
         mSinks.add(sink);
@@ -67,19 +63,6 @@ public class DiscoveryCallback extends MediaRouter.Callback {
         if (!mSinks.contains(sink)) return;
         mSinks.remove(sink);
         updateChromeMediaRouter();
-    }
-
-    @Override
-    public void onRouteChanged(MediaRouter router, MediaRouter.RouteInfo route) {
-        // Sometimes onRouteAdded is not called for the route as it doesn't yet match the selector.
-        // onRouteChanged() will be called later when the matching category is added.
-        if (route == null) return;
-
-        if (route.matchesSelector(mRouteSelector)) {
-            onRouteAdded(router, route);
-        } else {
-            onRouteRemoved(router, route);
-        }
     }
 
     private void updateChromeMediaRouter() {

@@ -9,7 +9,6 @@ import android.content.pm.PackageManager;
 import android.content.pm.PackageManager.NameNotFoundException;
 import android.content.pm.ResolveInfo;
 import android.content.res.Resources;
-import android.content.res.Resources.NotFoundException;
 import android.graphics.drawable.Drawable;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -65,7 +64,7 @@ class ShareDialogAdapter extends ArrayAdapter<ResolveInfo> {
                 Drawable icon = ApiCompatibilityUtils.getDrawable(res, iconRes);
                 return icon;
             }
-        } catch (NameNotFoundException | NotFoundException e) {
+        } catch (NameNotFoundException e) {
             // Could not find the icon. loadIcon call below will return the default app icon.
         }
         return info.loadIcon(mManager);

@@ -8,8 +8,8 @@ import org.chromium.base.ThreadUtils;
 import org.chromium.base.VisibleForTesting;
 import org.chromium.base.annotations.CalledByNative;
 import org.chromium.base.annotations.SuppressFBWarnings;
-import org.chromium.components.sync.ModelType;
-import org.chromium.components.sync.PassphraseType;
+import org.chromium.sync.ModelType;
+import org.chromium.sync.PassphraseType;
 import org.json.JSONArray;
 import org.json.JSONException;
 
@@ -17,8 +17,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
-
-import javax.annotation.Nullable;
 
 /**
  * JNI wrapper for the native ProfileSyncService.
@@ -55,14 +53,6 @@ public class ProfileSyncService {
         }
     }
 
-    /**
-     * Provider for the Android master sync flag.
-     */
-    interface MasterSyncEnabledProvider {
-        // Returns whether master sync is enabled.
-        public boolean isMasterSyncEnabled();
-    }
-
     private static final String TAG = "ProfileSyncService";
 
     private static final int[] ALL_SELECTABLE_TYPES = new int[] {
@@ -75,7 +65,6 @@ public class ProfileSyncService {
     };
 
     private static ProfileSyncService sProfileSyncService;
-    private static boolean sInitialized = false;
 
     // Sync state changes more often than listeners are added/removed, so using CopyOnWrite.
     private final List<SyncStateChangedListener> mListeners =
@@ -88,26 +77,15 @@ public class ProfileSyncService {
     private long mNativeProfileSyncServiceAndroid;
 
     /**
-     * An object that knows whether Android's master sync setting is enabled.
-     */
-    private MasterSyncEnabledProvider mMasterSyncEnabledProvider;
-
-    /**
-     * Retrieves or creates the ProfileSyncService singleton instance. Returns null if sync is
-     * disabled (via flag or variation).
+     * Retrieves or creates the ProfileSyncService singleton instance.
      *
      * Can only be accessed on the main thread.
      */
-    @Nullable
     @SuppressFBWarnings("LI_LAZY_INIT")
     public static ProfileSyncService get() {
         ThreadUtils.assertOnUiThread();
-        if (!sInitialized) {
+        if (sProfileSyncService == null) {
             sProfileSyncService = new ProfileSyncService();
-            if (sProfileSyncService.mNativeProfileSyncServiceAndroid == 0) {
-                sProfileSyncService = null;
-            }
-            sInitialized = true;
         }
         return sProfileSyncService;
     }
@@ -115,7 +93,6 @@ public class ProfileSyncService {
     @VisibleForTesting
     public static void overrideForTests(ProfileSyncService profileSyncService) {
         sProfileSyncService = profileSyncService;
-        sInitialized = true;
     }
 
     protected ProfileSyncService() {
@@ -218,11 +195,6 @@ public class ProfileSyncService {
         return nativeIsUsingSecondaryPassphrase(mNativeProfileSyncServiceAndroid);
     }
 
-    public byte[] getCustomPassphraseKey() {
-        assert isUsingSecondaryPassphrase();
-        return nativeGetCustomPassphraseKey(mNativeProfileSyncServiceAndroid);
-    }
-
     /**
      * Checks if we need a passphrase to decrypt a currently-enabled data type. This returns false
      * if a passphrase is needed for a type that is not currently enabled.
@@ -241,6 +213,15 @@ public class ProfileSyncService {
      */
     public boolean isBackendInitialized() {
         return nativeIsBackendInitialized(mNativeProfileSyncServiceAndroid);
+    }
+
+    /**
+     * Checks if the first sync setup is currently in progress.
+     *
+     * @return true if first sync setup is in progress
+     */
+    public boolean isFirstSetupInProgress() {
+        return nativeIsFirstSetupInProgress(mNativeProfileSyncServiceAndroid);
     }
 
     /**
@@ -291,15 +272,6 @@ public class ProfileSyncService {
     public GoogleServiceAuthError.State getAuthError() {
         int authErrorCode = nativeGetAuthError(mNativeProfileSyncServiceAndroid);
         return GoogleServiceAuthError.State.fromCode(authErrorCode);
-    }
-
-    /**
-     * Gets client action for sync protocol error.
-     *
-     * @return {@link ProtocolErrorClientAction}.
-     */
-    public int getProtocolErrorClientAction() {
-        return nativeGetProtocolErrorClientAction(mNativeProfileSyncServiceAndroid);
     }
 
     /**
@@ -360,18 +332,12 @@ public class ProfileSyncService {
                 ? ALL_SELECTABLE_TYPES : modelTypeSetToArray(enabledTypes));
     }
 
-    public void setFirstSetupComplete() {
-        nativeSetFirstSetupComplete(mNativeProfileSyncServiceAndroid);
-    }
-
-    // TODO(maxbogue): Remove when downstream is updated to use the above.
-    @Deprecated
     public void setSyncSetupCompleted() {
-        nativeSetFirstSetupComplete(mNativeProfileSyncServiceAndroid);
+        nativeSetSyncSetupCompleted(mNativeProfileSyncServiceAndroid);
     }
 
-    public boolean isFirstSetupComplete() {
-        return nativeIsFirstSetupComplete(mNativeProfileSyncServiceAndroid);
+    public boolean hasSyncSetupCompleted() {
+        return nativeHasSyncSetupCompleted(mNativeProfileSyncServiceAndroid);
     }
 
     public boolean isSyncRequested() {
@@ -497,30 +463,6 @@ public class ProfileSyncService {
     }
 
     /**
-     * Set the MasterSyncEnabledProvider for ProfileSyncService.
-     *
-     * This method is intentionally package-scope and should only be called once.
-     */
-    void setMasterSyncEnabledProvider(MasterSyncEnabledProvider masterSyncEnabledProvider) {
-        ThreadUtils.assertOnUiThread();
-        assert mMasterSyncEnabledProvider == null;
-        mMasterSyncEnabledProvider = masterSyncEnabledProvider;
-    }
-
-    /**
-     * Returns whether Android's master sync setting is enabled.
-     */
-    @CalledByNative
-    public boolean isMasterSyncEnabled() {
-        ThreadUtils.assertOnUiThread();
-        // TODO(maxbogue): ensure that this method is never called before
-        // setMasterSyncEnabledProvider() and change the line below to an assert.
-        // See http://crbug.com/570569
-        if (mMasterSyncEnabledProvider == null) return true;
-        return mMasterSyncEnabledProvider.isMasterSyncEnabled();
-    }
-
-    /**
      * Invokes the onResult method of the callback from native code.
      */
     @CalledByNative
@@ -546,15 +488,14 @@ public class ProfileSyncService {
     private native void nativeSetSyncSessionsId(long nativeProfileSyncServiceAndroid, String tag);
     private native String nativeQuerySyncStatusSummary(long nativeProfileSyncServiceAndroid);
     private native int nativeGetAuthError(long nativeProfileSyncServiceAndroid);
-    private native int nativeGetProtocolErrorClientAction(long nativeProfileSyncServiceAndroid);
     private native boolean nativeIsBackendInitialized(long nativeProfileSyncServiceAndroid);
+    private native boolean nativeIsFirstSetupInProgress(long nativeProfileSyncServiceAndroid);
     private native boolean nativeIsEncryptEverythingAllowed(long nativeProfileSyncServiceAndroid);
     private native boolean nativeIsEncryptEverythingEnabled(long nativeProfileSyncServiceAndroid);
     private native void nativeEnableEncryptEverything(long nativeProfileSyncServiceAndroid);
     private native boolean nativeIsPassphraseRequiredForDecryption(
             long nativeProfileSyncServiceAndroid);
     private native boolean nativeIsUsingSecondaryPassphrase(long nativeProfileSyncServiceAndroid);
-    private native byte[] nativeGetCustomPassphraseKey(long nativeProfileSyncServiceAndroid);
     private native boolean nativeSetDecryptionPassphrase(
             long nativeProfileSyncServiceAndroid, String passphrase);
     private native void nativeSetEncryptionPassphrase(
@@ -576,8 +517,8 @@ public class ProfileSyncService {
             long nativeProfileSyncServiceAndroid, boolean syncEverything, int[] modelTypeArray);
     private native void nativeSetSetupInProgress(
             long nativeProfileSyncServiceAndroid, boolean inProgress);
-    private native void nativeSetFirstSetupComplete(long nativeProfileSyncServiceAndroid);
-    private native boolean nativeIsFirstSetupComplete(long nativeProfileSyncServiceAndroid);
+    private native void nativeSetSyncSetupCompleted(long nativeProfileSyncServiceAndroid);
+    private native boolean nativeHasSyncSetupCompleted(long nativeProfileSyncServiceAndroid);
     private native boolean nativeIsSyncRequested(long nativeProfileSyncServiceAndroid);
     private native boolean nativeIsSyncActive(long nativeProfileSyncServiceAndroid);
     private native boolean nativeHasKeepEverythingSynced(long nativeProfileSyncServiceAndroid);

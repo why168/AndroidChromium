@@ -19,7 +19,6 @@ import org.chromium.base.Log;
 import org.chromium.base.VisibleForTesting;
 import org.chromium.base.annotations.SuppressFBWarnings;
 import org.chromium.chrome.browser.ChromeApplication;
-import org.chromium.chrome.browser.ChromeVersionInfo;
 
 import java.io.BufferedOutputStream;
 import java.io.BufferedReader;
@@ -57,7 +56,7 @@ import java.util.UUID;
  * http://docs.google.com/a/google.com/document/d/1scTCovqASf5ktkOeVj8wFRkWTCeDYw2LrOBNn05CDB0/edit
  */
 public class OmahaClient extends IntentService {
-    private static final String TAG = "omaha";
+    private static final String TAG = "cr.omaha";
 
     // Intent actions.
     private static final String ACTION_INITIALIZE =
@@ -198,10 +197,6 @@ public class OmahaClient extends IntentService {
             return;
         }
 
-        if (getRequestGenerator() == null) {
-            return;
-        }
-
         if (!mStateHasBeenRestored) {
             restoreState();
         }
@@ -217,16 +212,7 @@ public class OmahaClient extends IntentService {
         }
     }
 
-    /**
-     * Begin communicating with the Omaha Update Server.
-     */
-    public static void onForegroundSessionStart(Context context) {
-        if (!ChromeVersionInfo.isOfficialBuild()) return;
-        Intent omahaIntent = createInitializeIntent(context);
-        context.startService(omahaIntent);
-    }
-
-    static Intent createInitializeIntent(Context context) {
+    public static Intent createInitializeIntent(Context context) {
         Intent intent = new Intent(context, OmahaClient.class);
         intent.setAction(ACTION_INITIALIZE);
         return intent;
@@ -607,18 +593,6 @@ public class OmahaClient extends IntentService {
         }
 
         return currentVersionNumber.isSmallerThan(latestVersionNumber);
-    }
-
-    /**
-     * Retrieves the latest version we know about from disk.
-     * This function incurs I/O, so make sure you don't use it from the main thread.
-     *
-     * @return A string representing the latest version.
-     */
-    static String getLatestVersionNumberString(Context context) {
-        assert Looper.myLooper() != Looper.getMainLooper();
-        VersionNumberGetter getter = getVersionNumberGetter();
-        return getter.getLatestKnownVersion(context, PREF_PACKAGE, PREF_LATEST_VERSION);
     }
 
     /**

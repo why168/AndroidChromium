@@ -24,7 +24,7 @@ public class EmptyTabModelObserver implements TabModelObserver {
     }
 
     @Override
-    public void didCloseTab(int tabId, boolean incognito) {
+    public void didCloseTab(Tab tab) {
     }
 
     @Override
@@ -59,7 +59,4 @@ public class EmptyTabModelObserver implements TabModelObserver {
     public void allTabsClosureCommitted() {
     }
 
-    @Override
-    public void tabRemoved(Tab tab) {
-    }
 }

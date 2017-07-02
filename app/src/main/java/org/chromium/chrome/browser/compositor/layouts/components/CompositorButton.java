@@ -344,7 +344,4 @@ public class CompositorButton
                 // Do nothing.
         }
     }
-
-    @Override
-    public void onPropertyAnimationFinished(Property prop) {}
 }

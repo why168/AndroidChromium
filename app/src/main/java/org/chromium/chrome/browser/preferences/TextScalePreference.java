@@ -12,7 +12,6 @@ import android.widget.TextView;
 
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.accessibility.FontSizePrefs;
-import org.chromium.chrome.browser.accessibility.FontSizePrefs.FontSizePrefsObserver;
 
 /**
  * Preference that allows the user to change the scaling factor that's applied to web page text.
@@ -21,17 +20,21 @@ import org.chromium.chrome.browser.accessibility.FontSizePrefs.FontSizePrefsObse
 public class TextScalePreference extends SeekBarPreference {
     private TextView mPreview;
     private View mView;
-    private final FontSizePrefs mFontSizePrefs;
+    private FontSizeObserver mFontSizeObserver;
+    private FontSizePrefs mFontSizePrefs;
 
-    private final FontSizePrefsObserver mFontSizePrefsObserver = new FontSizePrefsObserver() {
+    private class FontSizeObserver implements FontSizePrefs.Observer {
         @Override
-        public void onFontScaleFactorChanged(float fontScaleFactor, float userFontScaleFactor) {
+        public void onChangeFontSize(float font) {
             updatePreview();
         }
 
         @Override
-        public void onForceEnableZoomChanged(boolean enabled) {}
-    };
+        public void onChangeForceEnableZoom(boolean enabled) {}
+
+        @Override
+        public void onChangeUserSetForceEnableZoom(boolean enabled) {}
+    }
 
     /**
      * Constructor for inflating from XML.
@@ -40,6 +43,7 @@ public class TextScalePreference extends SeekBarPreference {
         super(context, attrs);
 
         mFontSizePrefs = FontSizePrefs.getInstance(getContext());
+        mFontSizeObserver = new FontSizeObserver();
 
         setLayoutResource(R.layout.custom_preference);
         setWidgetLayoutResource(R.layout.preference_text_scale);
@@ -61,19 +65,18 @@ public class TextScalePreference extends SeekBarPreference {
     }
 
     /**
-     * Listens for changes to the text scale and updates the preview text as needed. This must be
-     * matched with a call to stopObservingFontPrefs().
+     * startObservingFont must be called when FontSizePreview's parent fragment is initialized.
      */
     public void startObservingFontPrefs() {
-        mFontSizePrefs.addObserver(mFontSizePrefsObserver);
+        mFontSizePrefs.addObserver(mFontSizeObserver);
         updatePreview();
     }
 
     /**
-     * Stops listening for changes to the text scale.
+     * stopObservingFont must be called when FontSizePreview's parent fragment is destroyed.
      */
     public void stopObservingFontPrefs() {
-        mFontSizePrefs.removeObserver(mFontSizePrefsObserver);
+        mFontSizePrefs.removeObserver(mFontSizeObserver);
     }
 
     private void updatePreview() {

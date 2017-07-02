@@ -12,7 +12,6 @@ import android.view.ViewStub;
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.appmenu.AppMenuHandler;
 import org.chromium.chrome.browser.compositor.layouts.OverviewModeBehavior;
-import org.chromium.chrome.browser.snackbar.SnackbarManager;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.tabmodel.EmptyTabModelObserver;
 import org.chromium.chrome.browser.tabmodel.EmptyTabModelSelectorObserver;
@@ -35,7 +34,6 @@ public class EmptyBackgroundViewWrapper {
     private final TabModelObserver mTabModelObserver;
     private final TabModelSelectorObserver mTabModelSelectorObserver;
     private final OverviewModeBehavior mOverviewModeBehavior;
-    private final SnackbarManager mSnackbarManager;
 
     private EmptyBackgroundViewTablet mBackgroundView;
     private final AppMenuHandler mMenuHandler;
@@ -48,19 +46,16 @@ public class EmptyBackgroundViewWrapper {
      * @param activity             An {@link Activity} that represents a parent of the
      *                             {@link android.view.ViewStub}.
      * @param menuHandler          A {@link AppMenuHandler} to handle menu touch events.
-     * @param snackbarManager      The {@link SnackbarManager} to show the undo snackbar when the
-     *                             empty background is visible.
      * @param overviewModeBehavior A {@link OverviewModeBehavior} instance to detect when the app
      *                             is in overview mode.
      */
     public EmptyBackgroundViewWrapper(TabModelSelector selector, TabCreator tabCreator,
-            Activity activity, AppMenuHandler menuHandler, SnackbarManager snackbarManager,
+            Activity activity, AppMenuHandler menuHandler,
             OverviewModeBehavior overviewModeBehavior) {
         mActivity = activity;
         mMenuHandler = menuHandler;
         mTabModelSelector = selector;
         mTabCreator = tabCreator;
-        mSnackbarManager = snackbarManager;
         mOverviewModeBehavior = overviewModeBehavior;
         mTabModelObserver = new EmptyTabModelObserver() {
             @Override
@@ -74,7 +69,7 @@ public class EmptyBackgroundViewWrapper {
             }
 
             @Override
-            public void didCloseTab(int tabId, boolean incognito) {
+            public void didCloseTab(Tab tab) {
                 updateEmptyContainerState();
             }
 
@@ -85,11 +80,6 @@ public class EmptyBackgroundViewWrapper {
 
             @Override
             public void allTabsPendingClosure(List<Integer> tabIds) {
-                updateEmptyContainerState();
-            }
-
-            @Override
-            public void tabRemoved(Tab tab) {
                 updateEmptyContainerState();
             }
         };
@@ -147,7 +137,6 @@ public class EmptyBackgroundViewWrapper {
 
         if (mBackgroundView != null) {
             mBackgroundView.setEmptyContainerState(showEmptyBackground);
-            mSnackbarManager.overrideParent(showEmptyBackground ? mBackgroundView : null);
         }
     }
 

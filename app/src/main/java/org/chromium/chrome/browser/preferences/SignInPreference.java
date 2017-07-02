@@ -14,29 +14,25 @@ import android.text.TextUtils;
 import android.util.AttributeSet;
 import android.view.View;
 
-import org.chromium.base.metrics.RecordUserAction;
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.firstrun.FirstRunSignInProcessor;
 import org.chromium.chrome.browser.profiles.Profile;
 import org.chromium.chrome.browser.profiles.ProfileDownloader;
 import org.chromium.chrome.browser.signin.AccountManagementFragment;
-import org.chromium.chrome.browser.signin.AccountSigninActivity;
-import org.chromium.chrome.browser.signin.SigninAccessPoint;
 import org.chromium.chrome.browser.signin.SigninManager;
 import org.chromium.chrome.browser.signin.SigninManager.SignInAllowedObserver;
-import org.chromium.chrome.browser.sync.ProfileSyncService;
-import org.chromium.chrome.browser.sync.ProfileSyncService.SyncStateChangedListener;
-import org.chromium.components.signin.ChromeSigninController;
-import org.chromium.components.sync.AndroidSyncSettings;
+import org.chromium.sync.signin.AccountManagerHelper;
+import org.chromium.sync.signin.ChromeSigninController;
+
+import java.util.List;
 
 /**
  * A preference that displays "Sign in to Chrome" when the user is not sign in, and displays
- * the user's name, email, profile image and sync error icon if necessary when the user is signed
- * in.
+ * the user's name, email, and profile image when the user is signed in.
  */
-public class SignInPreference extends Preference
-        implements SignInAllowedObserver, ProfileDownloader.Observer,
-                   AndroidSyncSettings.AndroidSyncSettingsObserver, SyncStateChangedListener {
+public class SignInPreference extends Preference implements SignInAllowedObserver,
+        ProfileDownloader.Observer {
+
     private boolean mViewEnabled;
 
     /**
@@ -49,33 +45,23 @@ public class SignInPreference extends Preference
     }
 
     /**
-     * Starts listening for updates to the sign-in and sync state.
+     * Starts listening for updates to the sign-in state.
      */
     public void registerForUpdates() {
         SigninManager manager = SigninManager.get(getContext());
         manager.addSignInAllowedObserver(this);
         ProfileDownloader.addObserver(this);
         FirstRunSignInProcessor.updateSigninManagerFirstRunCheckDone(getContext());
-        AndroidSyncSettings.registerObserver(getContext(), this);
-        ProfileSyncService syncService = ProfileSyncService.get();
-        if (syncService != null) {
-            syncService.addSyncStateChangedListener(this);
-        }
     }
 
     /**
-     * Stops listening for updates to the sign-in and sync state. Every call to registerForUpdates()
-     * must be matched with a call to this method.
+     * Stops listening for updates to the sign-in state. Every call to registerForUpdates() must
+     * be matched with a call to this method.
      */
     public void unregisterForUpdates() {
         SigninManager manager = SigninManager.get(getContext());
         manager.removeSignInAllowedObserver(this);
         ProfileDownloader.removeObserver(this);
-        AndroidSyncSettings.unregisterObserver(getContext(), this);
-        ProfileSyncService syncService = ProfileSyncService.get();
-        if (syncService != null) {
-            syncService.removeSyncStateChangedListener(this);
-        }
     }
 
     /**
@@ -92,7 +78,13 @@ public class SignInPreference extends Preference
             summary = getContext().getString(R.string.sign_in_to_chrome_summary);
             fragment = null;
         } else {
-            summary = SyncPreference.getSyncStatusSummary(getContext());
+            List<String> accounts = AccountManagerHelper.get(getContext()).getGoogleAccountNames();
+            if (accounts.size() == 1) {
+                summary = accounts.get(0);
+            } else {
+                summary = getContext().getString(
+                        R.string.number_of_signed_in_accounts, accounts.size());
+            }
             fragment = AccountManagementFragment.class.getName();
             title = AccountManagementFragment.getCachedUserName(account.name);
             if (title == null) {
@@ -110,7 +102,6 @@ public class SignInPreference extends Preference
         setTitle(title);
         setSummary(summary);
         setFragment(fragment);
-        updateSyncStatusIcon();
 
         ChromeSigninController signinController = ChromeSigninController.get(getContext());
         boolean enabled = signinController.isSignedIn()
@@ -129,32 +120,6 @@ public class SignInPreference extends Preference
                     signinController.getSignedInAccountName(), resources);
             setIcon(new BitmapDrawable(resources, bitmap));
         }
-
-        setOnPreferenceClickListener(new OnPreferenceClickListener() {
-            @Override
-            public boolean onPreferenceClick(Preference preference) {
-                if (!AccountSigninActivity.startIfAllowed(
-                            getContext(), SigninAccessPoint.SETTINGS)) {
-                    return false;
-                }
-
-                setEnabled(false);
-                return true;
-            }
-        });
-
-        if (account == null && enabled) {
-            RecordUserAction.record("Signin_Impression_FromSettings");
-        }
-    }
-
-    private void updateSyncStatusIcon() {
-        if (SyncPreference.showSyncErrorIcon(getContext())
-                && ChromeSigninController.get(getContext()).isSignedIn()) {
-            setWidgetLayoutResource(R.layout.sync_error_widget);
-        } else {
-            setWidgetLayoutResource(0);
-        }
     }
 
     @Override
@@ -164,13 +129,6 @@ public class SignInPreference extends Preference
         view.setEnabled(mViewEnabled);
         view.findViewById(android.R.id.title).setEnabled(mViewEnabled);
         view.findViewById(android.R.id.summary).setEnabled(mViewEnabled);
-    }
-
-    // ProfileSyncServiceListener implementation:
-
-    @Override
-    public void syncStateChanged() {
-        update();
     }
 
     // SignInAllowedObserver
@@ -186,12 +144,6 @@ public class SignInPreference extends Preference
     public void onProfileDownloaded(String accountId, String fullName, String givenName,
             Bitmap bitmap) {
         AccountManagementFragment.updateUserNamePictureCache(accountId, fullName, bitmap);
-        update();
-    }
-
-    // AndroidSyncSettings.AndroidSyncSettingsObserver
-    @Override
-    public void androidSyncSettingsChanged() {
         update();
     }
 }

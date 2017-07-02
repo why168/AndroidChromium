@@ -8,17 +8,15 @@ import android.content.Context;
 import android.text.TextUtils;
 
 import org.chromium.base.ApiCompatibilityUtils;
-import org.chromium.base.ContextUtils;
+import org.chromium.base.ApplicationStatus;
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.dom_distiller.DomDistillerServiceFactory;
 import org.chromium.chrome.browser.dom_distiller.DomDistillerTabUtils;
 import org.chromium.chrome.browser.ntp.NewTabPage;
-import org.chromium.chrome.browser.offlinepages.OfflinePageUtils;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.toolbar.ToolbarModel.ToolbarModelDelegate;
 import org.chromium.components.dom_distiller.core.DomDistillerService;
 import org.chromium.components.dom_distiller.core.DomDistillerUrlUtils;
-import org.chromium.components.security_state.ConnectionSecurityLevel;
 import org.chromium.content_public.browser.WebContents;
 
 /**
@@ -30,16 +28,6 @@ class ToolbarModelImpl extends ToolbarModel implements ToolbarDataProvider, Tool
     private boolean mIsIncognito;
     private int mPrimaryColor;
     private boolean mIsUsingBrandColor;
-
-    /**
-     * Default constructor for this class.
-     */
-    public ToolbarModelImpl() {
-        super();
-        mPrimaryColor = ApiCompatibilityUtils.getColor(
-                ContextUtils.getApplicationContext().getResources(),
-                R.color.default_primary_color);
-    }
 
     /**
      * Handle any initialization that must occur after native has been initialized.
@@ -88,14 +76,12 @@ class ToolbarModelImpl extends ToolbarModel implements ToolbarDataProvider, Tool
 
     @Override
     public String getText() {
-        if (mTab != null && mTab.isBlimpTab()) return mTab.getUrl().trim();
-
         String displayText = super.getText();
 
-        if (mTab == null || mTab.isFrozen()) return displayText;
+        if (mTab == null) return displayText;
 
         String url = mTab.getUrl().trim();
-        if (DomDistillerUrlUtils.isDistilledPage(url)) {
+        if (!mTab.isFrozen() && DomDistillerUrlUtils.isDistilledPage(url)) {
             if (isStoredArticle(url)) {
                 DomDistillerService domDistillerService =
                         DomDistillerServiceFactory.getForProfile(mTab.getProfile());
@@ -108,11 +94,6 @@ class ToolbarModelImpl extends ToolbarModel implements ToolbarDataProvider, Tool
                 displayText =
                         DomDistillerTabUtils.getFormattedUrlFromOriginalDistillerUrl(originalUrl);
             }
-        } else if (mTab.isOfflinePage()
-                && mTab.getSecurityLevel() == ConnectionSecurityLevel.NONE) {
-            String originalUrl = mTab.getOriginalUrl();
-            displayText = OfflinePageUtils.stripSchemeFromOnlineUrl(
-                  DomDistillerTabUtils.getFormattedUrlFromOriginalDistillerUrl(originalUrl));
         }
 
         return displayText;
@@ -137,7 +118,7 @@ class ToolbarModelImpl extends ToolbarModel implements ToolbarDataProvider, Tool
      */
     public void setPrimaryColor(int color) {
         mPrimaryColor = color;
-        Context context = ContextUtils.getApplicationContext();
+        Context context = ApplicationStatus.getApplicationContext();
         mIsUsingBrandColor = !isIncognito()
                 && mPrimaryColor != ApiCompatibilityUtils.getColor(context.getResources(),
                         R.color.default_primary_color)

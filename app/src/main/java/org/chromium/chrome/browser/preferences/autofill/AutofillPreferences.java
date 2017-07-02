@@ -17,6 +17,7 @@ import org.chromium.chrome.R;
 import org.chromium.chrome.browser.autofill.PersonalDataManager;
 import org.chromium.chrome.browser.autofill.PersonalDataManager.AutofillProfile;
 import org.chromium.chrome.browser.autofill.PersonalDataManager.CreditCard;
+import org.chromium.chrome.browser.preferences.ChromeBaseCheckBoxPreference;
 import org.chromium.chrome.browser.preferences.ChromeSwitchPreference;
 
 /**
@@ -32,6 +33,9 @@ public class AutofillPreferences extends PreferenceFragment
     private static final String PREF_AUTOFILL_SWITCH = "autofill_switch";
     private static final String PREF_AUTOFILL_PROFILES = "autofill_profiles";
     private static final String PREF_AUTOFILL_CREDIT_CARDS = "autofill_credit_cards";
+    private static final String PREF_AUTOFILL_WALLET = "autofill_wallet";
+
+    ChromeBaseCheckBoxPreference mWalletPref;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -45,6 +49,15 @@ public class AutofillPreferences extends PreferenceFragment
             @Override
             public boolean onPreferenceChange(Preference preference, Object newValue) {
                 PersonalDataManager.setAutofillEnabled((boolean) newValue);
+                return true;
+            }
+        });
+
+        mWalletPref = (ChromeBaseCheckBoxPreference) findPreference(PREF_AUTOFILL_WALLET);
+        mWalletPref.setOnPreferenceChangeListener(new OnPreferenceChangeListener() {
+            @Override
+            public boolean onPreferenceChange(Preference preference, Object newValue) {
+                PersonalDataManager.setWalletImportEnabled((boolean) newValue);
                 return true;
             }
         });
@@ -88,7 +101,7 @@ public class AutofillPreferences extends PreferenceFragment
         // Add an edit preference for each current Chrome profile.
         PreferenceGroup profileCategory = (PreferenceGroup) findPreference(PREF_AUTOFILL_PROFILES);
         profileCategory.removeAll();
-        for (AutofillProfile profile : PersonalDataManager.getInstance().getProfilesForSettings()) {
+        for (AutofillProfile profile : PersonalDataManager.getInstance().getProfiles()) {
             // Add an item on the current page...
             Preference pref = new Preference(getActivity());
             pref.setTitle(profile.getFullName());
@@ -111,17 +124,17 @@ public class AutofillPreferences extends PreferenceFragment
         PreferenceGroup profileCategory =
                 (PreferenceGroup) findPreference(PREF_AUTOFILL_CREDIT_CARDS);
         profileCategory.removeAll();
-        for (CreditCard card : PersonalDataManager.getInstance().getCreditCardsForSettings()) {
+        for (CreditCard card : PersonalDataManager.getInstance().getCreditCards()) {
             // Add an item on the current page...
             Preference pref = new Preference(getActivity());
             pref.setTitle(card.getObfuscatedNumber());
             pref.setSummary(card.getFormattedExpirationDate(getActivity()));
 
             if (card.getIsLocal()) {
-                pref.setFragment(AutofillLocalCardEditor.class.getName());
+                pref.setFragment(AutofillCreditCardEditor.class.getName());
             } else {
-                pref.setFragment(AutofillServerCardEditor.class.getName());
                 pref.setWidgetLayoutResource(R.layout.autofill_server_data_label);
+                pref.setFragment(AutofillServerCardPreferences.class.getName());
             }
 
             Bundle args = pref.getExtras();
@@ -134,6 +147,16 @@ public class AutofillPreferences extends PreferenceFragment
         ChromeSwitchPreference autofillSwitch =
                 (ChromeSwitchPreference) findPreference(PREF_AUTOFILL_SWITCH);
         autofillSwitch.setChecked(PersonalDataManager.isAutofillEnabled());
+        if (!PersonalDataManager.isWalletImportFeatureAvailable()) {
+            getPreferenceScreen().removePreference(mWalletPref);
+            autofillSwitch.setDrawDivider(true);
+        } else {
+            if (getPreferenceScreen().findPreference(PREF_AUTOFILL_WALLET) == null) {
+                getPreferenceScreen().addPreference(mWalletPref);
+            }
+            autofillSwitch.setDrawDivider(false);
+            mWalletPref.setChecked(PersonalDataManager.isWalletImportEnabled());
+        }
     }
 
     @Override
