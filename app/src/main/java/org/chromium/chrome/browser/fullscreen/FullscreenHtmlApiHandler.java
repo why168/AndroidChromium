@@ -18,8 +18,6 @@ import android.view.Window;
 import android.view.WindowManager;
 
 import org.chromium.chrome.R;
-import org.chromium.chrome.browser.preferences.website.ContentSetting;
-import org.chromium.chrome.browser.preferences.website.FullscreenInfo;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.content.browser.ContentViewCore;
 import org.chromium.ui.widget.Toast;
@@ -57,7 +55,6 @@ public class FullscreenHtmlApiHandler {
     private Toast mNotificationToast;
 
     private OnLayoutChangeListener mFullscreenOnLayoutChangeListener;
-    private FullscreenInfoBarDelegate mFullscreenInfoBarDelegate;
 
     /**
      * Delegate that allows embedders to react to fullscreen API requests.
@@ -141,6 +138,8 @@ public class FullscreenHtmlApiHandler {
                             contentView.removeOnLayoutChangeListener(this);
                         }
                     });
+
+                    contentView.requestLayout();
                     break;
                 }
                 case MSG_ID_CLEAR_LAYOUT_FULLSCREEN_FLAG: {
@@ -181,7 +180,7 @@ public class FullscreenHtmlApiHandler {
     }
 
     /**
-     * Enters or exits persistent fullscreen mode.  In this mode, the top controls will be
+     * Enters or exits persistent fullscreen mode.  In this mode, the browser controls will be
      * permanently hidden until this mode is exited.
      *
      * @param enabled Whether to enable persistent fullscreen mode.
@@ -250,11 +249,6 @@ public class FullscreenHtmlApiHandler {
         if (contentViewCore.getWebContents() != null) {
             contentViewCore.getWebContents().exitFullscreen();
         }
-
-        if (mFullscreenInfoBarDelegate != null) {
-            mFullscreenInfoBarDelegate.closeFullscreenInfoBar();
-            mFullscreenInfoBarDelegate = null;
-        }
     }
 
     /**
@@ -305,13 +299,12 @@ public class FullscreenHtmlApiHandler {
         };
         contentView.addOnLayoutChangeListener(mFullscreenOnLayoutChangeListener);
         contentView.setSystemUiVisibility(systemUiVisibility);
+
+        // Request a layout so the updated system visibility takes affect.
+        contentView.requestLayout();
+
         mContentViewCoreInFullscreen = contentViewCore;
         mTabInFullscreen = tab;
-        FullscreenInfo fullscreenInfo = new FullscreenInfo(tab.getUrl(), null, tab.isIncognito());
-        ContentSetting fullscreenPermission = fullscreenInfo.getContentSetting();
-        if (fullscreenPermission != ContentSetting.ALLOW) {
-            mFullscreenInfoBarDelegate = FullscreenInfoBarDelegate.create(this, tab);
-        }
     }
 
     /**

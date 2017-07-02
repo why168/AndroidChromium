@@ -8,16 +8,20 @@ import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.PorterDuff;
 import android.graphics.Rect;
+import android.graphics.Region;
 import android.util.AttributeSet;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewStub;
 import android.widget.FrameLayout;
 
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.compositor.layouts.eventfilter.EdgeSwipeHandler;
 import org.chromium.chrome.browser.contextualsearch.SwipeRecognizer;
+import org.chromium.chrome.browser.util.ViewUtils;
 import org.chromium.chrome.browser.widget.ClipDrawableProgressBar.DrawingInfo;
 import org.chromium.chrome.browser.widget.ControlContainer;
+import org.chromium.chrome.browser.widget.ToolbarProgressBar;
 import org.chromium.chrome.browser.widget.ViewResourceFrameLayout;
 import org.chromium.ui.UiUtils;
 import org.chromium.ui.resources.dynamics.ViewResourceAdapter;
@@ -55,9 +59,15 @@ public class ToolbarControlContainer extends FrameLayout implements ControlConta
     }
 
     @Override
+    public View getView() {
+        return this;
+    }
+
+    @Override
     public void getProgressBarDrawingInfo(DrawingInfo drawingInfoOut) {
         // TODO(yusufo): Avoid casting to the layout without making the interface bigger.
-        ((ToolbarLayout) mToolbar).getProgressBar().getDrawingInfo(drawingInfoOut);
+        ToolbarProgressBar progressBar = ((ToolbarLayout) mToolbar).getProgressBar();
+        if (progressBar != null) progressBar.getDrawingInfo(drawingInfoOut);
     }
 
     @Override
@@ -72,9 +82,14 @@ public class ToolbarControlContainer extends FrameLayout implements ControlConta
     }
 
     @Override
-    public void onFinishInflate() {
+    public void initWithToolbar(int toolbarLayoutId) {
+        ViewStub toolbarStub = (ViewStub) findViewById(R.id.toolbar_stub);
+        toolbarStub.setLayoutResource(toolbarLayoutId);
+        toolbarStub.inflate();
+
         mToolbar = (Toolbar) findViewById(R.id.toolbar);
         mToolbarContainer = (ToolbarViewResourceFrameLayout) findViewById(R.id.toolbar_container);
+        mToolbarContainer.setToolbar(mToolbar);
         mMenuBtn = findViewById(R.id.menu_button);
 
         if (mToolbar instanceof ToolbarTablet) {
@@ -86,8 +101,20 @@ public class ToolbarControlContainer extends FrameLayout implements ControlConta
 
         assert mToolbar != null;
         assert mMenuBtn != null;
+    }
 
-        super.onFinishInflate();
+    @Override
+    public boolean gatherTransparentRegion(Region region) {
+        // Reset the translation on the control container before attempting to compute the
+        // transparent region.
+        float translateY = getTranslationY();
+        setTranslationY(0);
+
+        ViewUtils.gatherTransparentRegionsForOpaqueView(this, region);
+
+        setTranslationY(translateY);
+
+        return true;
     }
 
     /**
@@ -118,8 +145,11 @@ public class ToolbarControlContainer extends FrameLayout implements ControlConta
 
         @Override
         protected ViewResourceAdapter createResourceAdapter() {
-            return new ToolbarViewResourceAdapter(
-                    this, (Toolbar) findViewById(R.id.toolbar));
+            return new ToolbarViewResourceAdapter(this);
+        }
+
+        public void setToolbar(Toolbar toolbar) {
+            ((ToolbarViewResourceAdapter) getResourceAdapter()).setToolbar(toolbar);
         }
 
         @Override
@@ -129,26 +159,32 @@ public class ToolbarControlContainer extends FrameLayout implements ControlConta
     }
 
     private static class ToolbarViewResourceAdapter extends ViewResourceAdapter {
-        private final int mToolbarActualHeightPx;
-        private final int mTabStripHeightPx;
         private final int[] mTempPosition = new int[2];
-
         private final View mToolbarContainer;
-        private final Toolbar mToolbar;
+
+        private Toolbar mToolbar;
+        private int mToolbarActualHeightPx;
+        private int mTabStripHeightPx;
 
         /** Builds the resource adapter for the toolbar. */
-        public ToolbarViewResourceAdapter(View toolbarContainer, Toolbar toolbar) {
+        public ToolbarViewResourceAdapter(View toolbarContainer) {
             super(toolbarContainer);
-
             mToolbarContainer = toolbarContainer;
+        }
+
+        /**
+         * Set the toolbar after it has been dynamically inflated.
+         * @param toolbar The browser's toolbar.
+         */
+        public void setToolbar(Toolbar toolbar) {
             mToolbar = toolbar;
             int containerHeightResId = R.dimen.control_container_height;
             if (mToolbar instanceof CustomTabToolbar) {
                 containerHeightResId = R.dimen.custom_tabs_control_container_height;
             }
-            mToolbarActualHeightPx = toolbarContainer.getResources().getDimensionPixelSize(
+            mToolbarActualHeightPx = mToolbarContainer.getResources().getDimensionPixelSize(
                     containerHeightResId);
-            mTabStripHeightPx = toolbarContainer.getResources().getDimensionPixelSize(
+            mTabStripHeightPx = mToolbarContainer.getResources().getDimensionPixelSize(
                     R.dimen.tab_strip_height);
         }
 
@@ -185,6 +221,9 @@ public class ToolbarControlContainer extends FrameLayout implements ControlConta
         @Override
         protected void onCaptureEnd() {
             mToolbar.setTextureCaptureMode(false);
+            // Forcing a texture capture should only be done for one draw. Turn off forced
+            // texture capture.
+            mToolbar.setForceTextureCapture(false);
         }
 
         @Override

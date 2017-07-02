@@ -21,27 +21,39 @@ public class GcmUma {
     public static final int UMA_UPSTREAM_SIZE_LIMIT_EXCEEDED = 1;
     public static final int UMA_UPSTREAM_TOKEN_REQUEST_FAILED = 2;
     public static final int UMA_UPSTREAM_SEND_FAILED = 3;
-    public static final int UMA_UPSTREAM_MAX = 4;
+    public static final int UMA_UPSTREAM_COUNT = 4;
 
-    // Values for the "GCM.AndroidGcmReceiver" UMA histogram. The list is append-only.
-    public static final int UMA_GCM_RECEIVER_SUCCESS = 0;
-    public static final int UMA_GCM_RECEIVER_ERROR_SECURITY_EXCEPTION = 1;
-    public static final int UMA_GCM_RECEIVER_MAX = 2;
+    public static void recordDataMessageReceived(Context context, final boolean hasCollapseKey) {
+        onNativeLaunched(context, new Runnable() {
+            @Override public void run() {
+                // There is no equivalent of the GCM Store on Android in which we can fail to find a
+                // registered app. It's not clear whether Google Play Services doesn't check for
+                // registrations, or only gives us messages that have one, but in either case we
+                // should log true here.
+                RecordHistogram.recordBooleanHistogram(
+                        "GCM.DataMessageReceivedHasRegisteredApp", true);
+                RecordHistogram.recordCountHistogram(
+                        "GCM.DataMessageReceived", 1);
+                RecordHistogram.recordBooleanHistogram(
+                        "GCM.DataMessageReceivedHasCollapseKey", hasCollapseKey);
+            }
+        });
+    }
 
     public static void recordGcmUpstreamHistogram(Context context, final int value) {
         onNativeLaunched(context, new Runnable() {
             @Override public void run() {
                 RecordHistogram.recordEnumeratedHistogram(
-                        "Invalidations.GCMUpstreamRequest", value, UMA_UPSTREAM_MAX);
+                        "Invalidations.GCMUpstreamRequest", value, UMA_UPSTREAM_COUNT);
             }
         });
     }
 
-    public static void recordGcmReceiverHistogram(Context context, final int value) {
+    public static void recordDeletedMessages(Context context) {
         onNativeLaunched(context, new Runnable() {
             @Override public void run() {
-                RecordHistogram.recordEnumeratedHistogram(
-                        "GCM.AndroidGcmReceiverError", value, UMA_GCM_RECEIVER_MAX);
+                RecordHistogram.recordCount1000Histogram(
+                        "GCM.DeletedMessagesReceived", 0 /* unknown deleted count */);
             }
         });
     }

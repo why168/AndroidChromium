@@ -7,6 +7,7 @@ package org.chromium.chrome.browser.webapps;
 import android.content.Context;
 import android.graphics.Color;
 import android.util.AttributeSet;
+import android.view.View;
 
 import org.chromium.chrome.browser.compositor.layouts.eventfilter.EdgeSwipeHandler;
 import org.chromium.chrome.browser.widget.ClipDrawableProgressBar.DrawingInfo;
@@ -26,6 +27,10 @@ public class WebappControlContainer extends ViewResourceFrameLayout
     }
 
     @Override
+    public void initWithToolbar(int toolbarLayoutId) {
+    }
+
+    @Override
     public ViewResourceAdapter getToolbarResourceAdapter() {
         return getResourceAdapter();
     }
@@ -41,5 +46,10 @@ public class WebappControlContainer extends ViewResourceFrameLayout
     @Override
     public int getToolbarBackgroundColor() {
         return Color.WHITE;
+    }
+
+    @Override
+    public View getView() {
+        return this;
     }
 }

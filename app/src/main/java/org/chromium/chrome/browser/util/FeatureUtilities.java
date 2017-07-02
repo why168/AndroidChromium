@@ -12,15 +12,27 @@ import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.StrictMode;
 import android.os.UserManager;
 import android.speech.RecognizerIntent;
+import android.text.TextUtils;
 
 import org.chromium.base.CommandLine;
+import org.chromium.base.ContextUtils;
+import org.chromium.base.FieldTrialList;
+import org.chromium.base.Log;
 import org.chromium.base.ThreadUtils;
 import org.chromium.base.VisibleForTesting;
+import org.chromium.chrome.browser.ApplicationLifetime;
+import org.chromium.chrome.browser.ChromeFeatureList;
 import org.chromium.chrome.browser.ChromeSwitches;
-import org.chromium.chrome.browser.preferences.DocumentModeManager;
-import org.chromium.sync.signin.AccountManagerHelper;
+import org.chromium.chrome.browser.download.DownloadUtils;
+import org.chromium.chrome.browser.firstrun.FirstRunGlueImpl;
+import org.chromium.chrome.browser.instantapps.InstantAppsHandler;
+import org.chromium.chrome.browser.preferences.ChromePreferenceManager;
+import org.chromium.chrome.browser.tabmodel.DocumentModeAssassin;
+import org.chromium.chrome.browser.webapps.ChromeWebApkHost;
+import org.chromium.components.signin.AccountManagerHelper;
 import org.chromium.ui.base.DeviceFormFactor;
 
 import java.util.List;
@@ -30,9 +42,17 @@ import java.util.List;
  * this device.
  */
 public class FeatureUtilities {
+    private static final String TAG = "FeatureUtilities";
+    private static final String HERB_EXPERIMENT_NAME = "TabManagementExperiment";
+    private static final String HERB_EXPERIMENT_FLAVOR_PARAM = "type";
+
     private static Boolean sHasGoogleAccountAuthenticator;
     private static Boolean sHasRecognitionIntentHandler;
-    private static Boolean sDocumentModeDisabled;
+    private static Boolean sChromeHomeEnabled;
+
+    private static String sCachedHerbFlavor;
+    private static boolean sIsHerbFlavorCached;
+
     /** Used to track if cached command line flags should be refreshed. */
     private static CommandLine.ResetListener sResetListener = null;
 
@@ -98,33 +118,22 @@ public class FeatureUtilities {
      * @return Whether Chrome should be running on document mode.
      */
     public static boolean isDocumentMode(Context context) {
-        if (sDocumentModeDisabled == null && CommandLine.isInitialized()) {
-            initResetListener();
-            sDocumentModeDisabled = CommandLine.getInstance().hasSwitch(
-                    ChromeSwitches.DISABLE_DOCUMENT_MODE);
-        }
-        return isDocumentModeEligible(context)
-                && !DocumentModeManager.getInstance(context).isOptedOutOfDocumentMode()
-                && (sDocumentModeDisabled == null || !sDocumentModeDisabled.booleanValue());
+        return isDocumentModeEligible(context) && !DocumentModeAssassin.isOptedOutOfDocumentMode();
     }
 
     /**
-     * Whether the device could possibly run in Document mode (may return true even
-     * if the document mode is turned off).
+     * Whether the device could possibly run in Document mode (may return true even if the document
+     * mode is turned off).
+     *
+     * This function can't be changed to return false (even if document mode is deleted) because we
+     * need to know whether a user needs to be migrated away.
+     *
      * @param context The context to use for checking configuration.
      * @return Whether the device could possibly run in Document mode.
      */
     public static boolean isDocumentModeEligible(Context context) {
         return Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP
                 && !DeviceFormFactor.isTablet(context);
-    }
-
-    /**
-     * Records the current document mode state with native-side feature utilities.
-     * @param enabled Whether the document mode is enabled.
-     */
-    public static void setDocumentModeEnabled(boolean enabled) {
-        nativeSetDocumentModeEnabled(enabled);
     }
 
     /**
@@ -135,18 +144,134 @@ public class FeatureUtilities {
         nativeSetCustomTabVisible(visible);
     }
 
-    private static void initResetListener() {
-        if (sResetListener != null) return;
-
-        sResetListener = new CommandLine.ResetListener() {
-            @Override
-            public void onCommandLineReset() {
-                sDocumentModeDisabled = null;
-            }
-        };
-        CommandLine.addResetListener(sResetListener);
+    /**
+     * Records whether the activity is in multi-window mode with native-side feature utilities.
+     * @param isInMultiWindowMode Whether the activity is in Android N multi-window mode.
+     */
+    public static void setIsInMultiWindowMode(boolean isInMultiWindowMode) {
+        nativeSetIsInMultiWindowMode(isInMultiWindowMode);
     }
 
-    private static native void nativeSetDocumentModeEnabled(boolean enabled);
+    private static boolean isHerbDisallowed(Context context) {
+        return isDocumentMode(context);
+    }
+
+    /**
+     * @return Which flavor of Herb is being tested.
+     *         See {@link ChromeSwitches#HERB_FLAVOR_ELDERBERRY} and its related switches.
+     */
+    public static String getHerbFlavor() {
+        Context context = ContextUtils.getApplicationContext();
+        if (isHerbDisallowed(context)) return ChromeSwitches.HERB_FLAVOR_DISABLED;
+
+        if (!sIsHerbFlavorCached) {
+            sCachedHerbFlavor = null;
+
+            // Allowing disk access for preferences while prototyping.
+            StrictMode.ThreadPolicy oldPolicy = StrictMode.allowThreadDiskReads();
+            try {
+                sCachedHerbFlavor =
+                        ChromePreferenceManager.getInstance(context).getCachedHerbFlavor();
+            } finally {
+                StrictMode.setThreadPolicy(oldPolicy);
+            }
+
+            sIsHerbFlavorCached = true;
+            Log.d(TAG, "Retrieved cached Herb flavor: " + sCachedHerbFlavor);
+        }
+
+        return sCachedHerbFlavor;
+    }
+
+    /**
+     * Caches flags that must take effect on startup but are set via native code.
+     */
+    public static void cacheNativeFlags() {
+        cacheHerbFlavor();
+        DownloadUtils.cacheIsDownloadHomeEnabled();
+        InstantAppsHandler.getInstance().cacheInstantAppsEnabled();
+        ChromeWebApkHost.cacheEnabledStateForNextLaunch();
+        cacheChromeHomeEnabled();
+        FirstRunGlueImpl.cacheFirstRunPrefs();
+    }
+
+    /**
+     * Caches which flavor of Herb the user prefers from native.
+     */
+    private static void cacheHerbFlavor() {
+        Context context = ContextUtils.getApplicationContext();
+        if (isHerbDisallowed(context)) return;
+
+        String oldFlavor = getHerbFlavor();
+
+        // Check the experiment value before the command line to put the user in the correct group.
+        // The first clause does the null checks so so we can freely use the startsWith() function.
+        String newFlavor = FieldTrialList.findFullName(HERB_EXPERIMENT_NAME);
+        Log.d(TAG, "Experiment flavor: " + newFlavor);
+        if (!TextUtils.isEmpty(newFlavor)
+                && newFlavor.startsWith(ChromeSwitches.HERB_FLAVOR_ELDERBERRY)) {
+            newFlavor = ChromeSwitches.HERB_FLAVOR_ELDERBERRY;
+        } else {
+            newFlavor = ChromeSwitches.HERB_FLAVOR_DISABLED;
+        }
+
+        CommandLine instance = CommandLine.getInstance();
+        if (instance.hasSwitch(ChromeSwitches.HERB_FLAVOR_DISABLED_SWITCH)) {
+            newFlavor = ChromeSwitches.HERB_FLAVOR_DISABLED;
+        } else if (instance.hasSwitch(ChromeSwitches.HERB_FLAVOR_ELDERBERRY_SWITCH)) {
+            newFlavor = ChromeSwitches.HERB_FLAVOR_ELDERBERRY;
+        }
+
+        Log.d(TAG, "Caching flavor: " + newFlavor);
+        sCachedHerbFlavor = newFlavor;
+
+        if (!TextUtils.equals(oldFlavor, newFlavor)) {
+            ChromePreferenceManager.getInstance(context).setCachedHerbFlavor(newFlavor);
+        }
+    }
+
+    /**
+     * @return True if tab model merging for Android N+ is enabled.
+     */
+    public static boolean isTabModelMergingEnabled() {
+        if (CommandLine.getInstance().hasSwitch(ChromeSwitches.DISABLE_TAB_MERGING_FOR_TESTING)) {
+            return false;
+        }
+        return Build.VERSION.SDK_INT > Build.VERSION_CODES.M;
+    }
+
+    /**
+     * Cache whether or not Chrome Home is enabled.
+     */
+    public static void cacheChromeHomeEnabled() {
+        Context context = ContextUtils.getApplicationContext();
+
+        // Chrome Home doesn't work with tablets.
+        if (DeviceFormFactor.isTablet(context)) return;
+
+        boolean isChromeHomeEnabled = ChromeFeatureList.isEnabled(ChromeFeatureList.CHROME_HOME);
+        ChromePreferenceManager manager = ChromePreferenceManager.getInstance(context);
+        boolean valueChanged = isChromeHomeEnabled != manager.isChromeHomeEnabled();
+        manager.setChromeHomeEnabled(isChromeHomeEnabled);
+        sChromeHomeEnabled = isChromeHomeEnabled;
+
+        // If the cached value changed, restart chrome.
+        if (valueChanged) ApplicationLifetime.terminate(true);
+    }
+
+    /**
+     * @return Whether or not chrome should attach the toolbar to the bottom of the screen.
+     */
+    public static boolean isChromeHomeEnabled() {
+        if (sChromeHomeEnabled == null) {
+            ChromePreferenceManager manager =
+                    ChromePreferenceManager.getInstance(ContextUtils.getApplicationContext());
+            sChromeHomeEnabled = manager.isChromeHomeEnabled();
+        }
+
+        return sChromeHomeEnabled;
+    }
+
     private static native void nativeSetCustomTabVisible(boolean visible);
+    private static native void nativeSetIsInMultiWindowMode(boolean isInMultiWindowMode);
 }

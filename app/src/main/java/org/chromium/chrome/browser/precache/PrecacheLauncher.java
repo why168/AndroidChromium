@@ -10,7 +10,7 @@ import org.chromium.base.Log;
 import org.chromium.base.ThreadUtils;
 import org.chromium.base.VisibleForTesting;
 import org.chromium.base.annotations.CalledByNative;
-import org.chromium.chrome.browser.preferences.PrefServiceBridge;
+import org.chromium.chrome.browser.preferences.privacy.PrivacyPreferencesManager;
 import org.chromium.chrome.browser.sync.ProfileSyncService;
 
 import java.util.EnumSet;
@@ -46,7 +46,7 @@ public abstract class PrecacheLauncher {
      */
     private boolean mCalled = false;
     private boolean mSyncInitialized = false;
-    private boolean mNetworkPredictionsAllowed = false;
+    private boolean mPrerenderEnabled = false;
     private boolean mShouldRun = false;
 
     /** Destroy the native PrecacheLauncher, releasing the memory that it was using. */
@@ -96,12 +96,11 @@ public abstract class PrecacheLauncher {
     }
 
     /**
-     * Updates the PrecacheServiceLauncher with whether conditions are right for precaching. All of
+     * Updates the PrecacheController with whether conditions are right for precaching. All of
      * the following must be true:
      *
      * <ul>
      *   <li>The predictive network actions preference is enabled.</li>
-     *   <li>The current network type is suitable for predictive network actions.</li>
      *   <li>Sync is enabled for sessions and it is not encrypted with a secondary passphrase.</li>
      *   <li>Either the Precache field trial or the precache commandline flag is enabled.</li>
      * </ul>
@@ -116,22 +115,20 @@ public abstract class PrecacheLauncher {
         // thread.
         ThreadUtils.assertOnUiThread();
 
-        boolean networkPredictionsAllowed =
-                PrefServiceBridge.getInstance().canPredictNetworkActions();
+        boolean prerenderEnabled = PrivacyPreferencesManager.getInstance().shouldPrerender();
         boolean shouldRun = nativeShouldRun();
 
-        mNetworkPredictionsAllowed = networkPredictionsAllowed;
+        mPrerenderEnabled = prerenderEnabled;
         mShouldRun = shouldRun;
 
-        PrecacheServiceLauncher.setIsPrecachingEnabled(
-                context.getApplicationContext(), networkPredictionsAllowed && shouldRun);
+        PrecacheController.setIsPrecachingEnabled(context, prerenderEnabled && shouldRun);
         Log.v(TAG, "updateEnabledSync complete");
     }
 
     /**
-     * If precaching is enabled, then allow the PrecacheService to be launched and signal Chrome
+     * If precaching is enabled, then allow the PrecacheController to be launched and signal Chrome
      * when conditions are right to start precaching. If precaching is disabled, prevent the
-     * PrecacheService from ever starting.
+     * PrecacheController from ever starting.
      *
      * @param context any context within the application
      */
@@ -144,7 +141,7 @@ public abstract class PrecacheLauncher {
                 mCalled = true;
                 final ProfileSyncService sync = ProfileSyncService.get();
 
-                if (mListener == null) {
+                if (mListener == null && sync != null) {
                     mListener = new ProfileSyncService.SyncStateChangedListener() {
                         public void syncStateChanged() {
                             if (sync.isBackendInitialized()) {
@@ -156,17 +153,19 @@ public abstract class PrecacheLauncher {
                     sync.addSyncStateChangedListener(mListener);
                 }
 
-                // Call the listener once, in case the sync backend is already initialized.
-                mListener.syncStateChanged();
+                if (mListener != null) {
+                    // Call the listener once, in case the sync backend is already initialized.
+                    mListener.syncStateChanged();
+                }
                 Log.v(TAG, "updateEnabled complete");
             }
         });
     }
 
     /**
-     * If precaching is enabled, then allow the PrecacheService to be launched and signal Chrome
+     * If precaching is enabled, then allow the PrecacheController to be launched and signal Chrome
      * when conditions are right to start precaching. If precaching is disabled, prevent the
-     * PrecacheService from ever starting.
+     * PrecacheController from ever starting.
      *
      * @param context any context within the application
      */
@@ -180,7 +179,7 @@ public abstract class PrecacheLauncher {
         EnumSet<FailureReason> reasons = EnumSet.noneOf(FailureReason.class);
         if (!mCalled) reasons.add(FailureReason.UPDATE_PRECACHING_ENABLED_NEVER_CALLED);
         if (!mSyncInitialized) reasons.add(FailureReason.SYNC_NOT_INITIALIZED);
-        if (!mNetworkPredictionsAllowed) {
+        if (!mPrerenderEnabled) {
             reasons.add(FailureReason.PRERENDER_PRIVACY_PREFERENCE_NOT_ENABLED);
         }
         if (!mShouldRun) reasons.add(FailureReason.NATIVE_SHOULD_RUN_IS_FALSE);

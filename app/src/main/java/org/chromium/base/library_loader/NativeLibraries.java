@@ -6,7 +6,7 @@ public class NativeLibraries {
     public static boolean sUseLibraryInZipFile = false;
     public static boolean sEnableLinkerTests = false;
     public static final String[] LIBRARIES =
-      {"chrome_public","chromium_android_linker"};
+      {"chrome"};
     static String sVersionNumber =
-      "48.0.2554.0";
+      "56.0.2924.87";
 }

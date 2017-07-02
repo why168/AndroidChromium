@@ -33,7 +33,6 @@ import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.tabmodel.TabModel;
 import org.chromium.chrome.browser.tabmodel.TabModelSelector;
 import org.chromium.chrome.browser.tabmodel.TabModelUtils;
-import org.chromium.content.browser.ContentViewCore;
 import org.chromium.ui.resources.ResourceManager;
 
 import java.util.ArrayList;
@@ -118,7 +117,7 @@ public abstract class Layout implements TabContentManager.ThumbnailChangeListene
     // Drawing area properties.
     private float mWidth;
     private float mHeight;
-    private float mHeightMinusTopControls;
+    private float mHeightMinusBrowserControls;
 
     /** A {@link Context} instance. */
     private Context mContext;
@@ -168,7 +167,7 @@ public abstract class Layout implements TabContentManager.ThumbnailChangeListene
         // Invalid sizes
         mWidth = -1;
         mHeight = -1;
-        mHeightMinusTopControls = -1;
+        mHeightMinusBrowserControls = -1;
 
         mCurrentOrientation = Orientation.UNSET;
     }
@@ -217,42 +216,6 @@ public abstract class Layout implements TabContentManager.ThumbnailChangeListene
         if (tab == null) return null;
 
         return tab.getView();
-    }
-
-    /**
-     * TODO(dtrainor): Remove after method is no longer used downstream.
-     * Used to get a list of Android {@link View}s that represent both the normal content as well as
-     * overlays.
-     * @param views A {@link List} that will be populated with {@link View}s that represent all of
-     *                the content in this {@link Layout}.
-     */
-    public void getAllViews(List<View> views) {
-        getAllContentViews(views);
-    }
-
-    /**
-     * Used to get a list of Android {@link View}s that represent both the normal content as well as
-     * overlays.
-     * @param views A {@link List} that will be populated with {@link View}s that represent all of
-     *                the content in this {@link Layout}.
-     */
-    public void getAllContentViews(List<View> views) {
-        Tab tab = mTabModelSelector.getCurrentTab();
-        if (tab == null) return;
-        tab.getAllContentViews(views);
-    }
-
-    /**
-     * Used to get a list of {@link ContentViewCore}s that represent both the normal content as well
-     * as overlays.  These are all {@link ContentViewCore}s currently showing or rendering content
-     * for this {@link Layout}.
-     * @param contents A {@link List} that will be populated with {@link ContentViewCore}s currently
-     *                 rendering content related to this {@link Layout}.
-     */
-    public void getAllContentViewCores(List<ContentViewCore> contents) {
-        Tab tab = mTabModelSelector.getCurrentTab();
-        if (tab == null) return;
-        tab.getAllContentViewCores(contents);
     }
 
     /**
@@ -362,33 +325,31 @@ public abstract class Layout implements TabContentManager.ThumbnailChangeListene
 
     /**
      * Called when the size of the viewport has changed.
-     * @param availableViewport      The actual viewport this {@link Layout} should be rendering to.
      * @param visibleViewport        The visible viewport that represents the area on the screen
      *                               this {@link Layout} gets to draw to (potentially takes into
-     *                               account top controls).
+     *                               account browser controls).
      * @param screenViewport         The viewport of the screen.
-     * @param heightMinusTopControls The height the {@link Layout} gets excluding the height of the
-     *                               top controls.  TODO(dtrainor): Look at getting rid of this.
+     * @param heightMinusBrowserControls The height the {@link Layout} gets excluding the height of
+     * the
+     *                               browser controls.  TODO(dtrainor): Look at getting rid of this.
      * @param orientation            The new orientation.  Valid values are defined by
      *                               {@link Orientation}.
      */
-    public final void sizeChanged(RectF availableViewport, RectF visibleViewport,
-            RectF screenViewport, float heightMinusTopControls, int orientation) {
-        // 1. Pull out this Layout's specific width and height properties based on the available
-        // viewport.
-        float width = availableViewport.width();
-        float height = availableViewport.height();
+    public final void sizeChanged(RectF visibleViewport, RectF screenViewport,
+            float heightMinusBrowserControls, int orientation) {
+        // 1. Pull out this Layout's width and height properties based on the viewport.
+        float width = screenViewport.width();
+        float height = screenViewport.height();
 
         // 2. Check if any Layout-specific properties have changed.
-        boolean layoutPropertiesChanged = mWidth != width
-                || mHeight != height
-                || mHeightMinusTopControls != heightMinusTopControls
+        boolean layoutPropertiesChanged = mWidth != width || mHeight != height
+                || mHeightMinusBrowserControls != heightMinusBrowserControls
                 || mCurrentOrientation != orientation;
 
         // 3. Update the internal sizing properties.
         mWidth = width;
         mHeight = height;
-        mHeightMinusTopControls = heightMinusTopControls;
+        mHeightMinusBrowserControls = heightMinusBrowserControls;
         mCurrentOrientation = orientation;
 
         // 4. Notify the actual Layout if necessary.
@@ -463,6 +424,9 @@ public abstract class Layout implements TabContentManager.ThumbnailChangeListene
         mUpdateHost.startHiding(nextTabId, hintAtTabSelection);
         mIsHiding = true;
         mNextTabId = nextTabId;
+        for (int i = 0; i < mSceneOverlays.size(); i++) {
+            mSceneOverlays.get(i).onHideLayout();
+        }
     }
 
     /**
@@ -500,6 +464,9 @@ public abstract class Layout implements TabContentManager.ThumbnailChangeListene
             mNextTabId = Tab.INVALID_TAB_ID;
         }
         mUpdateHost.doneHiding();
+        if (mRenderHost != null && mRenderHost.getResourceManager() != null) {
+            mRenderHost.getResourceManager().clearTintedResourceCache();
+        }
     }
 
     /**
@@ -607,10 +574,10 @@ public abstract class Layout implements TabContentManager.ThumbnailChangeListene
     }
 
     /**
-     * @return The height of the drawing area minus the top controls.
+     * @return The height of the drawing area minus the browser controls.
      */
-    public float getHeightMinusTopControls() {
-        return mHeightMinusTopControls;
+    public float getHeightMinusBrowserControls() {
+        return mHeightMinusBrowserControls;
     }
 
     /**
@@ -631,15 +598,6 @@ public abstract class Layout implements TabContentManager.ThumbnailChangeListene
             if (mLayoutTabs[i].showToolbar()) return true;
         }
         return false;
-    }
-
-    /**
-     * @param currentOffset The current top controls offset in dp.
-     * @return {@link Float#NaN} if no offset should be used, or a value in dp if the top controls
-     *         offset should be overridden.
-     */
-    public float getTopControlsOffset(float currentOffset) {
-        return Float.NaN;
     }
 
     /**
@@ -738,6 +696,10 @@ public abstract class Layout implements TabContentManager.ThumbnailChangeListene
      * @return Whether or not the layout consumed the event.
      */
     public boolean onBackPressed() {
+        for (int i = 0; i < mSceneOverlays.size(); i++) {
+            // If the back button was consumed by any overlays, return true.
+            if (mSceneOverlays.get(i).onBackPressed()) return true;
+        }
         return false;
     }
 
@@ -811,6 +773,22 @@ public abstract class Layout implements TabContentManager.ThumbnailChangeListene
             boolean newIsIncognito, boolean background, float originX, float originY) {
         for (int i = 0; i < mSceneOverlays.size(); i++) {
             mSceneOverlays.get(i).tabCreated(time, newIsIncognito, tabId, sourceTabId, !background);
+        }
+    }
+
+    /**
+     * Called when a tab is restored (created FROM_RESTORE).
+     * @param time  The current time of the app in ms.
+     * @param tabId The id of the restored tab.
+     */
+    public void onTabRestored(long time, int tabId) { }
+
+    /**
+     * Called when the TabModelSelector has been initialized with an accurate tab count.
+     */
+    public void onTabStateInitialized() {
+        for (int i = 0; i < mSceneOverlays.size(); i++) {
+            mSceneOverlays.get(i).tabStateInitialized();
         }
     }
 
@@ -928,8 +906,15 @@ public abstract class Layout implements TabContentManager.ThumbnailChangeListene
                 mLayoutAnimations = null;
                 onAnimationFinished();
             }
-            requestUpdate();
         }
+
+        // LayoutTabs may be running their own animations; make sure they are done.
+        for (int i = 0; mLayoutTabs != null && i < mLayoutTabs.length; i++) {
+            finished &= mLayoutTabs[i].onUpdateAnimation(time);
+        }
+
+        if (!finished) requestUpdate();
+
         return finished;
     }
 
@@ -1061,6 +1046,15 @@ public abstract class Layout implements TabContentManager.ThumbnailChangeListene
      * @return Whether the layout is handling the model updates when a tab is creating.
      */
     public boolean handlesTabCreating() {
+        if (mLayoutTabs == null || mLayoutTabs.length != 1) return false;
+        for (int i = 0; i < mSceneOverlays.size(); i++) {
+            if (mSceneOverlays.get(i).handlesTabCreating()) {
+                // Prevent animation from happening if the overlay handles creation.
+                startHiding(mLayoutTabs[0].getId(), false);
+                doneHiding();
+                return true;
+            }
+        }
         return false;
     }
 
@@ -1111,8 +1105,11 @@ public abstract class Layout implements TabContentManager.ThumbnailChangeListene
      */
     public EventFilter findInterceptingEventFilter(
             MotionEvent e, Point offsets, boolean isKeyboardShowing) {
-        for (int i = 0; i < mSceneOverlays.size(); i++) {
+        // The last added overlay will be drawn on top of everything else, therefore the last
+        // filter added should have the first chance to intercept any touch events.
+        for (int i = mSceneOverlays.size() - 1; i >= 0; i--) {
             EventFilter eventFilter = mSceneOverlays.get(i).getEventFilter();
+            if (eventFilter == null) continue;
             if (offsets != null) eventFilter.setCurrentMotionEventOffsets(offsets.x, offsets.y);
             if (eventFilter.onInterceptTouchEvent(e, isKeyboardShowing)) return eventFilter;
         }
@@ -1127,7 +1124,8 @@ public abstract class Layout implements TabContentManager.ThumbnailChangeListene
     /**
      * Build a {@link SceneLayer} if it hasn't already been built, and update it and return it.
      *
-     * @param contentViewport   A viewport in which to display content.
+     * @param viewport          A viewport in which to display content.
+     * @param contentViewport   The visible section of the viewport.
      * @param layerTitleCache   A layer title cache.
      * @param tabContentManager A tab content manager.
      * @param resourceManager   A resource manager.
@@ -1135,21 +1133,21 @@ public abstract class Layout implements TabContentManager.ThumbnailChangeListene
      * @return                  A {@link SceneLayer} that represents the content for this
      *                          {@link Layout}.
      */
-    public final SceneLayer getUpdatedSceneLayer(Rect viewport,
-            Rect contentViewport, LayerTitleCache layerTitleCache,
-            TabContentManager tabContentManager, ResourceManager resourceManager,
-            ChromeFullscreenManager fullscreenManager) {
+    public final SceneLayer getUpdatedSceneLayer(Rect viewport, Rect contentViewport,
+            LayerTitleCache layerTitleCache, TabContentManager tabContentManager,
+            ResourceManager resourceManager, ChromeFullscreenManager fullscreenManager) {
         updateSceneLayer(viewport, contentViewport, layerTitleCache, tabContentManager,
                 resourceManager, fullscreenManager);
 
-        float offsetPx = fullscreenManager != null ? fullscreenManager.getControlOffset() : 0.f;
+        float offsetPx = fullscreenManager != null ? fullscreenManager.getTopControlOffset() : 0.f;
         float dpToPx = getContext().getResources().getDisplayMetrics().density;
         float offsetDp = offsetPx / dpToPx;
-        float offsetOverride = getTopControlsOffset(offsetDp);
-        if (!Float.isNaN(offsetOverride)) offsetDp = offsetOverride;
 
         SceneLayer content = getSceneLayer();
         for (int i = 0; i < mSceneOverlays.size(); i++) {
+            // If the SceneOverlay is not showing, don't bother adding it to the tree.
+            if (!mSceneOverlays.get(i).isSceneOverlayTreeShowing()) continue;
+
             SceneOverlayLayer overlayLayer = mSceneOverlays.get(i).getUpdatedSceneOverlayTree(
                     layerTitleCache, resourceManager, offsetDp);
 
@@ -1161,17 +1159,14 @@ public abstract class Layout implements TabContentManager.ThumbnailChangeListene
     }
 
     /**
-     * @return Whether or not to force the top controls Android view to hide.
+     * @return Whether or not to force the browser controls Android view to hide.
      */
-    public boolean forceHideTopControlsAndroidView() {
+    public boolean forceHideBrowserControlsAndroidView() {
+        for (int i = 0; i < mSceneOverlays.size(); i++) {
+            // If any overlay wants to hide tha Android version of the browser controls, hide them.
+            if (mSceneOverlays.get(i).shouldHideAndroidBrowserControls()) return true;
+        }
         return false;
-    }
-
-    /**
-     * @return The toolbar brightness.
-     */
-    public float getToolbarBrightness() {
-        return 1.0f;
     }
 
     /**

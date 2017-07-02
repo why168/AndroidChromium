@@ -4,44 +4,55 @@
 
 package org.chromium.chrome.browser.util;
 
-import android.content.ComponentName;
+import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
-import android.content.pm.ResolveInfo;
+import android.os.BadParcelableException;
+import android.os.Binder;
 import android.os.Bundle;
 import android.os.IBinder;
 import android.os.Parcel;
 import android.os.Parcelable;
+import android.os.TransactionTooLargeException;
 import android.support.v4.app.BundleCompat;
 
 import org.chromium.base.Log;
 import org.chromium.base.VisibleForTesting;
 
 import java.util.ArrayList;
-import java.util.List;
 
 /**
  * Utilities dealing with extracting information from intents.
  */
 public class IntentUtils {
-    private static final String TAG = "cr_IntentUtils";
+    private static final String TAG = "IntentUtils";
 
     /** See {@link #isIntentTooLarge(Intent)}. */
     private static final int MAX_INTENT_SIZE_THRESHOLD = 750000;
 
     /**
-     * Retrieves a list of components that would handle the given intent.
-     * @param context The application context.
-     * @param intent The intent which we are interested in.
-     * @return The list of component names.
+     * Just like {@link Intent#hasExtra(String)} but doesn't throw exceptions.
      */
-    public static List<ComponentName> getIntentHandlers(Context context, Intent intent) {
-        List<ResolveInfo> list = context.getPackageManager().queryIntentActivities(intent, 0);
-        List<ComponentName> nameList = new ArrayList<ComponentName>();
-        for (ResolveInfo r : list) {
-            nameList.add(new ComponentName(r.activityInfo.packageName, r.activityInfo.name));
+    public static boolean safeHasExtra(Intent intent, String name) {
+        try {
+            return intent.hasExtra(name);
+        } catch (Throwable t) {
+            // Catches un-parceling exceptions.
+            Log.e(TAG, "hasExtra failed on intent " + intent);
+            return false;
         }
-        return nameList;
+    }
+
+    /**
+     * Just like {@link Intent#removeExtra(String)} but doesn't throw exceptions.
+     */
+    public static void safeRemoveExtra(Intent intent, String name) {
+        try {
+            intent.removeExtra(name);
+        } catch (Throwable t) {
+            // Catches un-parceling exceptions.
+            Log.e(TAG, "removeExtra failed on intent " + intent);
+        }
     }
 
     /**
@@ -67,6 +78,45 @@ public class IntentUtils {
             // Catches un-parceling exceptions.
             Log.e(TAG, "getIntExtra failed on intent " + intent);
             return defaultValue;
+        }
+    }
+
+    /**
+     * Just like {@link Bundle#getInt(String, int)} but doesn't throw exceptions.
+     */
+    public static int safeGetInt(Bundle bundle, String name, int defaultValue) {
+        try {
+            return bundle.getInt(name, defaultValue);
+        } catch (Throwable t) {
+            // Catches un-parceling exceptions.
+            Log.e(TAG, "getInt failed on bundle " + bundle);
+            return defaultValue;
+        }
+    }
+
+    /**
+     * Just like {@link Intent#getIntArrayExtra(String)} but doesn't throw exceptions.
+     */
+    public static int[] safeGetIntArrayExtra(Intent intent, String name) {
+        try {
+            return intent.getIntArrayExtra(name);
+        } catch (Throwable t) {
+            // Catches un-parceling exceptions.
+            Log.e(TAG, "getIntArrayExtra failed on intent " + intent);
+            return null;
+        }
+    }
+
+    /**
+     * Just like {@link Bundle#getIntArray(String)} but doesn't throw exceptions.
+     */
+    public static int[] safeGetIntArray(Bundle bundle, String name) {
+        try {
+            return bundle.getIntArray(name);
+        } catch (Throwable t) {
+            // Catches un-parceling exceptions.
+            Log.e(TAG, "getIntArray failed on bundle " + bundle);
+            return null;
         }
     }
 
@@ -176,6 +226,18 @@ public class IntentUtils {
     }
 
     /**
+     * Just like {@link Intent#getParcelableArrayExtra(String)} but doesn't throw exceptions.
+     */
+    public static Parcelable[] safeGetParcelableArrayExtra(Intent intent, String name) {
+        try {
+            return intent.getParcelableArrayExtra(name);
+        } catch (Throwable t) {
+            Log.e(TAG, "getParcelableArrayExtra failed on intent " + intent);
+            return null;
+        }
+    }
+
+    /**
      * Just like {@link Intent#getStringArrayListExtra(String)} but doesn't throw exceptions.
      */
     public static ArrayList<String> safeGetStringArrayListExtra(Intent intent, String name) {
@@ -221,6 +283,7 @@ public class IntentUtils {
      * Creates a temporary copy of the extra Bundle, which is required as
      * Intent#getBinderExtra() doesn't exist, but Bundle.getBinder() does.
      */
+    @VisibleForTesting
     public static IBinder safeGetBinderExtra(Intent intent, String name) {
         if (!intent.hasExtra(name)) return null;
         Bundle extras = intent.getExtras();
@@ -250,6 +313,21 @@ public class IntentUtils {
     }
 
     /**
+     * Catches any failures to start an Activity.
+     * @param context Context to use when starting the Activity.
+     * @param intent  Intent to fire.
+     * @return Whether or not Android accepted the Intent.
+     */
+    public static boolean safeStartActivity(Context context, Intent intent) {
+        try {
+            context.startActivity(intent);
+            return true;
+        } catch (ActivityNotFoundException e) {
+            return false;
+        }
+    }
+
+    /**
      * Returns how large the Intent will be in Parcel form, which is helpful for gauging whether
      * Android will deliver the Intent instead of throwing a TransactionTooLargeException.
      *
@@ -271,5 +349,37 @@ public class IntentUtils {
      */
     public static boolean isIntentTooLarge(Intent intent) {
         return getParceledIntentSize(intent) > MAX_INTENT_SIZE_THRESHOLD;
+    }
+
+    /**
+     * Given an exception, check whether it wrapped a {@link TransactionTooLargeException}.  If it
+     * does, then log the underlying error.  If not, throw the original exception again.
+     *
+     * @param e      The caught RuntimeException.
+     * @param intent The intent that triggered the RuntimeException to be thrown.
+     */
+    public static void logTransactionTooLargeOrRethrow(RuntimeException e, Intent intent) {
+        // See http://crbug.com/369574.
+        if (e.getCause() instanceof TransactionTooLargeException) {
+            Log.e(TAG, "Could not resolve Activity for intent " + intent.toString(), e);
+        } else {
+            throw e;
+        }
+    }
+
+    /**
+     * Sanitizes an intent. In case the intent cannot be unparcelled, all extras will be removed to
+     * make it safe to use.
+     * @return A safe to use version of this intent.
+     */
+    public static Intent sanitizeIntent(final Intent incomingIntent) {
+        if (incomingIntent == null) return null;
+        try {
+            incomingIntent.getBooleanExtra("TriggerUnparcel", false);
+            return incomingIntent;
+        } catch (BadParcelableException e) {
+            Log.e(TAG, "Invalid incoming intent.", e);
+            return incomingIntent.replaceExtras((Bundle) null);
+        }
     }
 }

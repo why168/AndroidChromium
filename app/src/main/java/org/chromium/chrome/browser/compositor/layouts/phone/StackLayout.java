@@ -344,6 +344,14 @@ public class StackLayout extends Layout implements Animatable<StackLayout.Proper
     }
 
     @Override
+    public void onTabRestored(long time, int tabId) {
+        super.onTabRestored(time, tabId);
+        // Call show() so that new stack tabs and potentially new stacks get created.
+        // TODO(twellington): add animation for showing the restored tab.
+        show(time, false);
+    }
+
+    @Override
     public void onTabModelSwitched(boolean toIncognitoTabModel) {
         flingStacks(toIncognitoTabModel);
         mFlingFromModelChange = true;
@@ -490,11 +498,12 @@ public class StackLayout extends Layout implements Animatable<StackLayout.Proper
         // Remove any views in case we're getting another call to show before we hide (quickly
         // toggling the tab switcher button).
         mViewContainer.removeAllViews();
+        int currentTabModel = mTabModelSelector.isIncognitoSelected() ? 1 : 0;
 
         for (int i = mStacks.length - 1; i >= 0; --i) {
             mStacks[i].reset();
             if (mStacks[i].isDisplayable()) {
-                mStacks[i].show();
+                mStacks[i].show(i == currentTabModel);
             } else {
                 mStacks[i].cleanupTabs();
             }
@@ -663,7 +672,7 @@ public class StackLayout extends Layout implements Animatable<StackLayout.Proper
         protected float mWidth, mHeight;
         PortraitViewport() {
             mWidth = StackLayout.this.getWidth();
-            mHeight = StackLayout.this.getHeightMinusTopControls();
+            mHeight = StackLayout.this.getHeightMinusBrowserControls();
         }
 
         float getClampedRenderedScrollOffset() {
@@ -719,7 +728,7 @@ public class StackLayout extends Layout implements Animatable<StackLayout.Proper
         }
 
         float getTopHeightOffset() {
-            return (StackLayout.this.getHeight() - getHeightMinusTopControls())
+            return (StackLayout.this.getHeight() - getHeightMinusBrowserControls())
                     * mStackOffsetYPercent;
         }
     }
@@ -727,7 +736,7 @@ public class StackLayout extends Layout implements Animatable<StackLayout.Proper
     class LandscapeViewport extends PortraitViewport {
         LandscapeViewport() {
             // This is purposefully inverted.
-            mWidth = StackLayout.this.getHeightMinusTopControls();
+            mWidth = StackLayout.this.getHeightMinusBrowserControls();
             mHeight = StackLayout.this.getWidth();
         }
 
@@ -1032,14 +1041,17 @@ public class StackLayout extends Layout implements Animatable<StackLayout.Proper
     }
 
     private float getFullScrollDistance() {
-        float distance =
-                getOrientation() == Orientation.PORTRAIT ? getWidth() : getHeightMinusTopControls();
+        float distance = getOrientation() == Orientation.PORTRAIT ? getWidth()
+                                                                  : getHeightMinusBrowserControls();
         return distance - 2 * getViewportParameters().getInnerMargin();
     }
 
     @Override
     public void doneHiding() {
         super.doneHiding();
+
+        mInnerMarginPercent = 0.0f;
+        mStackOffsetYPercent = 0.0f;
         mTabModelSelector.commitAllTabClosures();
     }
 
@@ -1176,6 +1188,9 @@ public class StackLayout extends Layout implements Animatable<StackLayout.Proper
         }
     }
 
+    @Override
+    public void onPropertyAnimationFinished(Property prop) {}
+
     /**
      * Called by the stacks whenever they start an animation.
      */
@@ -1205,6 +1220,6 @@ public class StackLayout extends Layout implements Animatable<StackLayout.Proper
                 resourceManager, fullscreenManager);
         assert mSceneLayer != null;
         mSceneLayer.pushLayers(getContext(), viewport, contentViewport, this, layerTitleCache,
-                tabContentManager, resourceManager);
+                tabContentManager, resourceManager, fullscreenManager);
     }
 }

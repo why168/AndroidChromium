@@ -4,9 +4,15 @@
 
 package org.chromium.chrome.browser.media.ui;
 
+import android.content.Intent;
+import android.graphics.Bitmap;
 import android.text.TextUtils;
 
 import org.chromium.chrome.browser.tab.Tab;
+import org.chromium.content_public.common.MediaMetadata;
+
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * Exposes information about the current media notification to the external clients.
@@ -40,15 +46,19 @@ public class MediaNotificationInfo {
      */
     public static final class Builder {
 
-        private String mTitle = "";
+        private MediaMetadata mMetadata = null;
         private boolean mIsPaused = false;
         private String mOrigin = "";
         private int mTabId = Tab.INVALID_TAB_ID;
         private boolean mIsPrivate = true;
-        private int mIcon = -1;
+        private int mIcon = 0;
+        private Bitmap mLargeIcon = null;
+        private int mDefaultLargeIcon = 0;
         private int mActions = ACTION_PLAY_PAUSE | ACTION_SWIPEAWAY;
         private int mId = INVALID_ID;
+        private Intent mContentIntent = null;
         private MediaNotificationListener mListener = null;
+        private Set<Integer> mMediaSessionActions = null;
 
         /**
          * Initializes the builder with the default values.
@@ -57,24 +67,28 @@ public class MediaNotificationInfo {
         }
 
         public MediaNotificationInfo build() {
-            assert mTitle != null;
+            assert mMetadata != null;
             assert mOrigin != null;
             assert mListener != null;
 
             return new MediaNotificationInfo(
-                    mTitle,
-                    mIsPaused,
-                    mOrigin,
-                    mTabId,
-                    mIsPrivate,
-                    mIcon,
-                    mActions,
-                    mId,
-                    mListener);
+                mMetadata,
+                mIsPaused,
+                mOrigin,
+                mTabId,
+                mIsPrivate,
+                mIcon,
+                mLargeIcon,
+                mDefaultLargeIcon,
+                mActions,
+                mId,
+                mContentIntent,
+                mListener,
+                mMediaSessionActions);
         }
 
-        public Builder setTitle(String title) {
-            mTitle = title;
+        public Builder setMetadata(MediaMetadata metadata) {
+            mMetadata = metadata;
             return this;
         }
 
@@ -103,6 +117,16 @@ public class MediaNotificationInfo {
             return this;
         }
 
+        public Builder setLargeIcon(Bitmap icon) {
+            mLargeIcon = icon;
+            return this;
+        }
+
+        public Builder setDefaultLargeIcon(int icon) {
+            mDefaultLargeIcon = icon;
+            return this;
+        }
+
         public Builder setActions(int actions) {
             mActions = actions;
             return this;
@@ -113,8 +137,18 @@ public class MediaNotificationInfo {
             return this;
         }
 
+        public Builder setContentIntent(Intent intent) {
+            mContentIntent = intent;
+            return this;
+        }
+
         public Builder setListener(MediaNotificationListener listener) {
             mListener = listener;
+            return this;
+        }
+
+        public Builder setMediaSessionActions(Set<Integer> actions) {
+            mMediaSessionActions = actions;
             return this;
         }
     }
@@ -125,9 +159,9 @@ public class MediaNotificationInfo {
     private final int mActions;
 
     /**
-     * The title of the media.
+     * The metadata associated with the media.
      */
-    public final String title;
+    public final MediaMetadata metadata;
 
     /**
      * The current state of the media, paused or not.
@@ -155,14 +189,34 @@ public class MediaNotificationInfo {
     public final int icon;
 
     /**
+     * The Bitmap resource used for a large icon.
+     */
+    public final Bitmap largeIcon;
+
+    /**
+     * The id of the default large icon from R.drawable.
+     */
+    public final int defaultLargeIcon;
+
+    /**
      * The id to use for the notification itself.
      */
     public final int id;
 
     /**
+     * The intent to send when the notification is selected.
+     */
+    public final Intent contentIntent;
+
+    /**
      * The listener for the control events.
      */
     public final MediaNotificationListener listener;
+
+    /**
+     * The actions enabled in MediaSession.
+     */
+    public final Set<Integer> mediaSessionActions;
 
     /**
      * @return if play/pause actions are supported by this notification.
@@ -187,32 +241,33 @@ public class MediaNotificationInfo {
 
     /**
      * Create a new MediaNotificationInfo.
-     * @param title The title of the media.
+     * @param metadata The metadata associated with the media.
      * @param isPaused The current state of the media, paused or not.
      * @param origin The origin of the tab containing the media.
      * @param tabId The id of the tab containing the media.
      * @param isPrivate Whether the media notification should be considered as private.
+     * @param contentIntent the intent to send when the notification is selected.
      * @param listener The listener for the control events.
      */
-    private MediaNotificationInfo(
-            String title,
-            boolean isPaused,
-            String origin,
-            int tabId,
-            boolean isPrivate,
-            int icon,
-            int actions,
-            int id,
-            MediaNotificationListener listener) {
-        this.title = title;
+    private MediaNotificationInfo(MediaMetadata metadata, boolean isPaused, String origin,
+            int tabId, boolean isPrivate, int icon, Bitmap largeIcon, int defaultLargeIcon,
+            int actions, int id, Intent contentIntent, MediaNotificationListener listener,
+            Set<Integer> mediaSessionActions) {
+        this.metadata = metadata;
         this.isPaused = isPaused;
         this.origin = origin;
         this.tabId = tabId;
         this.isPrivate = isPrivate;
         this.icon = icon;
+        this.largeIcon = largeIcon;
+        this.defaultLargeIcon = defaultLargeIcon;
         this.mActions = actions;
         this.id = id;
+        this.contentIntent = contentIntent;
         this.listener = listener;
+        this.mediaSessionActions = (mediaSessionActions != null)
+                ? new HashSet<Integer>(mediaSessionActions)
+                : new HashSet<Integer>();
     }
 
     @Override
@@ -221,28 +276,39 @@ public class MediaNotificationInfo {
         if (!(obj instanceof MediaNotificationInfo)) return false;
 
         MediaNotificationInfo other = (MediaNotificationInfo) obj;
-        return isPaused == other.isPaused
-                && isPrivate == other.isPrivate
-                && tabId == other.tabId
+        return isPaused == other.isPaused && isPrivate == other.isPrivate && tabId == other.tabId
                 && icon == other.icon
-                && mActions == other.mActions
+                && (largeIcon == other.largeIcon
+                           || (largeIcon != null && largeIcon.sameAs(other.largeIcon)))
+                && defaultLargeIcon == other.defaultLargeIcon && mActions == other.mActions
                 && id == other.id
-                && TextUtils.equals(title, other.title)
+                && (metadata == other.metadata
+                           || (metadata != null && metadata.equals(other.metadata)))
                 && TextUtils.equals(origin, other.origin)
-                && listener.equals(other.listener);
+                && (contentIntent == other.contentIntent
+                           || (contentIntent != null && contentIntent.equals(other.contentIntent)))
+                && (listener == other.listener
+                           || (listener != null && listener.equals(other.listener)))
+                && (mediaSessionActions == other.mediaSessionActions
+                           || (mediaSessionActions != null
+                                      && mediaSessionActions.equals(other.mediaSessionActions)));
     }
 
     @Override
     public int hashCode() {
         int result = isPaused ? 1 : 0;
         result = 31 * result + (isPrivate ? 1 : 0);
-        result = 31 * result + (title == null ? 0 : title.hashCode());
+        result = 31 * result + (metadata == null ? 0 : metadata.hashCode());
         result = 31 * result + (origin == null ? 0 : origin.hashCode());
+        result = 31 * result + (contentIntent == null ? 0 : contentIntent.hashCode());
         result = 31 * result + tabId;
         result = 31 * result + icon;
+        result = 31 * result + (largeIcon == null ? 0 : largeIcon.hashCode());
+        result = 31 * result + defaultLargeIcon;
         result = 31 * result + mActions;
         result = 31 * result + id;
         result = 31 * result + listener.hashCode();
+        result = 31 * result + mediaSessionActions.hashCode();
         return result;
     }
 }
